@@ -1,11 +1,11 @@
 import type { OcaModelInfo } from "@shared/api"
-import type { OcaAuthState, OcaUserInfo } from "@shared/proto/index.cline"
+import type { OcaAuthState, OcaUserInfo, VectorStoreInfo } from "@shared/proto/index.cline"
 import { EmptyRequest, StringRequest } from "@shared/proto/index.cline"
 import { Mode } from "@shared/storage/types"
 import { VSCodeButton, VSCodeLink, VSCodeProgressRing } from "@vscode/webview-ui-toolkit/react"
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useExtensionState } from "@/context/ExtensionStateContext"
-import { ModelsServiceClient, OcaAccountServiceClient } from "@/services/grpc-client"
+import { ModelsServiceClient, OcaAccountServiceClient, VectorsServiceClient } from "@/services/grpc-client"
 import {
 	VSC_BUTTON_BACKGROUND,
 	VSC_BUTTON_FOREGROUND,
@@ -16,6 +16,7 @@ import {
 import { BaseUrlField } from "../common/BaseUrlField"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 import OcaModelPicker from "./OcaModelPicker"
+import OcaVectorPicker from "./OcaVectorPicker"
 
 /**
  * Props for the OcaProvider component
@@ -112,7 +113,7 @@ function useOcaAuth() {
  * - Debounces base URL changes to avoid unnecessary calls.
  * - Guards against race conditions with a requestId and unmount checks.
  */
-function useOcaModels({
+function useOcaModelsAndKbs({
 	isAuthenticated,
 	baseUrl,
 	login,
@@ -122,38 +123,70 @@ function useOcaModels({
 	login: () => Promise<void>
 }) {
 	const [models, setModels] = useState<Record<string, OcaModelInfo>>({})
-	const [loading, setLoading] = useState(false)
-	const [hasError, setHasError] = useState(false)
-	const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null)
+	const [kbs, setKbs] = useState<Record<string, VectorStoreInfo>>({})
+	const [modelsLoading, setModelsLoading] = useState(false)
+	const [modelsHasError, setModelsHasError] = useState(false)
+	const [modelsLastRefreshedAt, setModelsLastRefreshedAt] = useState<number | null>(null)
+	const [kbsLoading, setKbsLoading] = useState(false)
+	const [kbsHasError, setKbsHasError] = useState(false)
+	const [kbsLastRefreshedAt, setKbsLastRefreshedAt] = useState<number | null>(null)
 
 	const reqIdRef = useRef(0)
 	const unmountedRef = useRef(false)
 	const debounceTimerRef = useRef<number | null>(null)
 
-	const doRefresh = useCallback(async (url: string) => {
+	const doRefreshModels = useCallback(async (url: string) => {
 		const myReqId = ++reqIdRef.current
-		setLoading(true)
-		setHasError(false)
+		setModelsLoading(true)
+		setModelsHasError(false)
 		try {
 			const resp = await ModelsServiceClient.refreshOcaModels(StringRequest.create({ value: url || "" }))
 			// Only apply if still latest and still mounted
 			if (!unmountedRef.current && myReqId === reqIdRef.current) {
 				if (resp.error) {
-					setHasError(true)
+					setModelsHasError(true)
 				} else {
 					setModels(resp.models || {})
-					setHasError(false)
-					setLastRefreshedAt(Date.now())
+					setModelsHasError(false)
+					setModelsLastRefreshedAt(Date.now())
 				}
 			}
 		} catch (err) {
 			if (!unmountedRef.current && myReqId === reqIdRef.current) {
 				console.error("Failed to refresh Oca models:", err)
-				setHasError(true)
+				setModelsHasError(true)
 			}
 		} finally {
 			if (!unmountedRef.current && myReqId === reqIdRef.current) {
-				setLoading(false)
+				setModelsLoading(false)
+			}
+		}
+	}, [])
+
+	const doRefreshKbs = useCallback(async (url: string) => {
+		const myReqId = ++reqIdRef.current
+		setKbsLoading(true)
+		setKbsHasError(false)
+		try {
+			const resp = await VectorsServiceClient.refreshOcaVectors(StringRequest.create({ value: url || "" }))
+			// Only apply if still latest and still mounted
+			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+				if (resp.error) {
+					setKbsHasError(true)
+				} else {
+					setKbs(resp.vectors || {})
+					setKbsHasError(false)
+					setKbsLastRefreshedAt(Date.now())
+				}
+			}
+		} catch (err) {
+			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+				console.error("Failed to refresh Oca knowledge bases:", err)
+				setKbsHasError(true)
+			}
+		} finally {
+			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+				setKbsLoading(false)
 			}
 		}
 	}, [])
@@ -169,13 +202,18 @@ function useOcaModels({
 		if (!isAuthenticated) {
 			// Clear models if logged out; prevent stale data
 			setModels({})
-			setLoading(false)
-			setHasError(false)
+			setModelsLoading(false)
+			setModelsHasError(false)
+
+			setKbs({})
+			setKbsLoading(false)
+			setKbsHasError(false)
 			return
 		}
 
 		debounceTimerRef.current = window.setTimeout(() => {
-			void doRefresh(baseUrl || "")
+			void doRefreshModels(baseUrl || "")
+			void doRefreshKbs(baseUrl || "")
 		}, 250)
 
 		return () => {
@@ -187,12 +225,12 @@ function useOcaModels({
 			// bump reqId so any in-flight result is ignored
 			reqIdRef.current++
 		}
-	}, [isAuthenticated, baseUrl, doRefresh])
+	}, [isAuthenticated, baseUrl, doRefreshModels, doRefreshKbs])
 
 	// User-initiated refresh with auto login + single retry on failure
 	const refreshModels = useCallback(async () => {
-		setLoading(true)
-		setHasError(false)
+		setModelsLoading(true)
+		setModelsHasError(false)
 
 		async function tryRefresh(retry = false): Promise<boolean> {
 			try {
@@ -201,26 +239,67 @@ function useOcaModels({
 					throw new Error(resp.error)
 				}
 				setModels(resp.models || {})
-				setHasError(false)
-				setLastRefreshedAt(Date.now())
+				setModelsHasError(false)
+				setModelsLastRefreshedAt(Date.now())
 				return true
 			} catch (_err) {
 				if (!retry) {
 					await login() // prompt login
 					return tryRefresh(true) // retry once
 				} else {
-					setHasError(true)
+					setModelsHasError(true)
 				}
 				return false
 			} finally {
-				setLoading(false)
+				setModelsLoading(false)
 			}
 		}
 
 		await tryRefresh()
 	}, [baseUrl, login])
 
-	return { models, loading, hasError, refreshModels, lastRefreshedAt }
+	const refreshKbs = useCallback(async () => {
+		setKbsLoading(true)
+		setKbsHasError(false)
+
+		async function tryRefresh(retry = false): Promise<boolean> {
+			try {
+				const resp = await VectorsServiceClient.refreshOcaVectors(StringRequest.create({ value: baseUrl || "" }))
+				if (resp.error) {
+					throw new Error(resp.error)
+				}
+				setKbs(resp.vectors || {})
+				setKbsHasError(false)
+				setKbsLastRefreshedAt(Date.now())
+				return true
+			} catch (_err) {
+				if (!retry) {
+					await login() // prompt login
+					return tryRefresh(true) // retry once
+				} else {
+					setKbsHasError(true)
+				}
+				return false
+			} finally {
+				setKbsLoading(false)
+			}
+		}
+
+		await tryRefresh()
+	}, [baseUrl, login])
+
+	return {
+		models,
+		modelsLoading,
+		modelsHasError,
+		modelsLastRefreshedAt,
+		kbs,
+		kbsLoading,
+		kbsHasError,
+		kbsLastRefreshedAt,
+		refreshModels,
+		refreshKbs,
+	}
 }
 
 /**
@@ -238,17 +317,26 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 	const {
 		models: ocaModels,
 		refreshModels,
-		hasError: ocaHasError,
-		loading: ocaLoading,
-		lastRefreshedAt,
-	} = useOcaModels({
+		modelsHasError: ocaModelsHasError,
+		modelsLoading: ocaModelsLoading,
+		modelsLastRefreshedAt,
+		kbs: ocaKbs,
+		refreshKbs,
+		kbsHasError: ocaKbsHasError,
+		kbsLoading: ocaKbsLoading,
+		kbsLastRefreshedAt,
+	} = useOcaModelsAndKbs({
 		isAuthenticated,
 		baseUrl: ocaBaseUrl,
 		login,
 	})
 
-	const handleRefresh = useCallback(async () => {
+	const handleModelRefresh = useCallback(async () => {
 		await refreshModels()
+	}, [refreshModels])
+
+	const handleKbRefresh = useCallback(async () => {
+		await refreshKbs()
 	}, [refreshModels])
 
 	// On first subscription result: if user exists, refresh models once.
@@ -260,9 +348,10 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 		didInitialAuthCheckRef.current = true
 		if (isAuthenticated) {
 			void refreshModels()
+			void refreshKbs()
 		}
 		// If user empty, do nothing (no auto login, no refresh)
-	}, [ready, isAuthenticated, refreshModels])
+	}, [ready, isAuthenticated, refreshModels, refreshKbs])
 
 	return (
 		<div>
@@ -345,20 +434,50 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 						apiConfiguration={apiConfiguration}
 						currentMode={currentMode}
 						isPopup={isPopup}
-						lastRefreshedAt={lastRefreshedAt}
-						loading={ocaLoading}
+						lastRefreshedAt={modelsLastRefreshedAt}
+						loading={ocaModelsLoading}
 						ocaModels={ocaModels}
-						onRefresh={handleRefresh}
+						onRefresh={handleModelRefresh}
 					/>
 
-					{isAuthenticated && ocaHasError && (
+					{isAuthenticated && ocaModelsHasError && (
 						<div
 							aria-live="polite"
 							className={`mt-2 text-[13px] [color:var(${VSC_DESCRIPTION_FOREGROUND})]`}
 							role="status">
 							<div>Failed to refresh models. Check your session or network.</div>
 							<div className="mt-2 flex gap-2">
-								<VSCodeButton appearance="secondary" onClick={handleRefresh}>
+								<VSCodeButton appearance="secondary" onClick={handleModelRefresh}>
+									Retry
+								</VSCodeButton>
+								<VSCodeButton
+									appearance="secondary"
+									onClick={async () => {
+										await login()
+									}}>
+									Sign in again
+								</VSCodeButton>
+							</div>
+						</div>
+					)}
+
+					<OcaVectorPicker
+						apiConfiguration={apiConfiguration}
+						currentMode={currentMode}
+						lastRefreshedAt={kbsLastRefreshedAt}
+						loading={ocaKbsLoading}
+						ocaKbs={ocaKbs}
+						onRefresh={handleKbRefresh}
+					/>
+
+					{isAuthenticated && ocaKbsHasError && (
+						<div
+							aria-live="polite"
+							className={`mt-2 text-[13px] [color:var(${VSC_DESCRIPTION_FOREGROUND})]`}
+							role="status">
+							<div>Failed to refresh knowledge bases. Check your session or network.</div>
+							<div className="mt-2 flex gap-2">
+								<VSCodeButton appearance="secondary" onClick={handleModelRefresh}>
 									Retry
 								</VSCodeButton>
 								<VSCodeButton
