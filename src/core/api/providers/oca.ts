@@ -18,6 +18,7 @@ export interface OcaHandlerOptions extends CommonApiHandlerOptions {
 	thinkingBudgetTokens?: number
 	ocaUsePromptCache?: boolean
 	taskId?: string
+	vectorIds?: string[]
 }
 
 export class OcaHandler implements ApiHandler {
@@ -180,7 +181,15 @@ export class OcaHandler implements ApiHandler {
 			return message
 		})
 
-		const stream = await client.chat.completions.create({
+		const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = []
+		if (this.getVectorStores().length > 0) {
+			tools.push({
+				type: "file_search",
+				vector_store_ids: this.getVectorStores(),
+			} as any)
+		}
+
+		const requestObject: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 			model: this.options.ocaModelId || liteLlmDefaultModelId,
 			messages: [enhancedSystemMessage, ...enhancedMessages],
 			temperature,
@@ -192,7 +201,12 @@ export class OcaHandler implements ApiHandler {
 			...(this.options.taskId && {
 				litellm_session_id: `cline-${this.options.taskId}`,
 			}), // Add session ID for LiteLLM tracking
-		})
+			tools,
+		}
+
+		console.log("Input to OCA chat completions: ", requestObject)
+
+		const stream = await client.chat.completions.create(requestObject)
 
 		const inputCost = (await this.calculateCost(1e6, 0)) || 0
 		const outputCost = (await this.calculateCost(0, 1e6)) || 0
@@ -256,6 +270,14 @@ export class OcaHandler implements ApiHandler {
 		return {
 			id: this.options.ocaModelId || liteLlmDefaultModelId,
 			info: this.options.ocaModelInfo || liteLlmModelInfoSaneDefaults,
+		}
+	}
+
+	getVectorStores() {
+		if (this.options.vectorIds) {
+			return this.options.vectorIds
+		} else {
+			return []
 		}
 	}
 }
