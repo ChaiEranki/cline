@@ -131,18 +131,23 @@ function useOcaModelsAndKbs({
 	const [kbsHasError, setKbsHasError] = useState(false)
 	const [kbsLastRefreshedAt, setKbsLastRefreshedAt] = useState<number | null>(null)
 
-	const reqIdRef = useRef(0)
-	const unmountedRef = useRef(false)
-	const debounceTimerRef = useRef<number | null>(null)
+	const modelReqIdRef = useRef(0)
+	const modelUnmountedRef = useRef(false)
+	const modelDebounceTimerRef = useRef<number | null>(null)
+
+	const kbReqIdRef = useRef(0)
+	const kbUnmountedRef = useRef(false)
+	const kbDebounceTimerRef = useRef<number | null>(null)
 
 	const doRefreshModels = useCallback(async (url: string) => {
-		const myReqId = ++reqIdRef.current
+		const myReqId = ++modelReqIdRef.current
 		setModelsLoading(true)
 		setModelsHasError(false)
 		try {
 			const resp = await ModelsServiceClient.refreshOcaModels(StringRequest.create({ value: url || "" }))
+			console.log(resp)
 			// Only apply if still latest and still mounted
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!modelUnmountedRef.current && myReqId === modelReqIdRef.current) {
 				if (resp.error) {
 					setModelsHasError(true)
 				} else {
@@ -152,25 +157,25 @@ function useOcaModelsAndKbs({
 				}
 			}
 		} catch (err) {
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!modelUnmountedRef.current && myReqId === modelReqIdRef.current) {
 				console.error("Failed to refresh Oca models:", err)
 				setModelsHasError(true)
 			}
 		} finally {
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!modelUnmountedRef.current && myReqId === modelReqIdRef.current) {
 				setModelsLoading(false)
 			}
 		}
 	}, [])
 
 	const doRefreshKbs = useCallback(async (url: string) => {
-		const myReqId = ++reqIdRef.current
+		const myReqId = ++kbReqIdRef.current
 		setKbsLoading(true)
 		setKbsHasError(false)
 		try {
 			const resp = await VectorsServiceClient.refreshOcaVectors(StringRequest.create({ value: url || "" }))
 			// Only apply if still latest and still mounted
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!kbUnmountedRef.current && myReqId === kbReqIdRef.current) {
 				if (resp.error) {
 					setKbsHasError(true)
 				} else {
@@ -180,12 +185,12 @@ function useOcaModelsAndKbs({
 				}
 			}
 		} catch (err) {
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!kbUnmountedRef.current && myReqId === kbReqIdRef.current) {
 				console.error("Failed to refresh Oca knowledge bases:", err)
 				setKbsHasError(true)
 			}
 		} finally {
-			if (!unmountedRef.current && myReqId === reqIdRef.current) {
+			if (!kbUnmountedRef.current && myReqId === kbReqIdRef.current) {
 				setKbsLoading(false)
 			}
 		}
@@ -193,10 +198,15 @@ function useOcaModelsAndKbs({
 
 	// Debounce changes to baseUrl or auth
 	useEffect(() => {
-		unmountedRef.current = false
-		if (debounceTimerRef.current) {
-			window.clearTimeout(debounceTimerRef.current)
-			debounceTimerRef.current = null
+		modelUnmountedRef.current = false
+		kbUnmountedRef.current = false
+		if (modelDebounceTimerRef.current) {
+			window.clearTimeout(modelDebounceTimerRef.current)
+			modelDebounceTimerRef.current = null
+		}
+		if (kbDebounceTimerRef.current) {
+			window.clearTimeout(kbDebounceTimerRef.current)
+			kbDebounceTimerRef.current = null
 		}
 
 		if (!isAuthenticated) {
@@ -211,19 +221,30 @@ function useOcaModelsAndKbs({
 			return
 		}
 
-		debounceTimerRef.current = window.setTimeout(() => {
+		modelDebounceTimerRef.current = window.setTimeout(() => {
 			void doRefreshModels(baseUrl || "")
+		}, 250)
+
+		kbDebounceTimerRef.current = window.setTimeout(() => {
 			void doRefreshKbs(baseUrl || "")
 		}, 250)
 
 		return () => {
-			unmountedRef.current = true
-			if (debounceTimerRef.current) {
-				window.clearTimeout(debounceTimerRef.current)
-				debounceTimerRef.current = null
+			modelUnmountedRef.current = true
+			if (modelDebounceTimerRef.current) {
+				window.clearTimeout(modelDebounceTimerRef.current)
+				modelDebounceTimerRef.current = null
 			}
 			// bump reqId so any in-flight result is ignored
-			reqIdRef.current++
+			modelReqIdRef.current++
+
+			kbUnmountedRef.current = true
+			if (kbDebounceTimerRef.current) {
+				window.clearTimeout(kbDebounceTimerRef.current)
+				kbDebounceTimerRef.current = null
+			}
+			// bump reqId so any in-flight result is ignored
+			kbReqIdRef.current++
 		}
 	}, [isAuthenticated, baseUrl, doRefreshModels, doRefreshKbs])
 
