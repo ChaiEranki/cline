@@ -148,15 +148,16 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ options, sele
 			}}>
 			{/* VSCode style dropdown button */}
 			<div
+				aria-disabled={options.length == 0}
 				aria-expanded={open}
 				aria-haspopup="listbox"
-				onClick={() => setOpen((o) => !o)}
+				onClick={() => options.length > 0 && setOpen((o) => !o)}
 				onKeyDown={(e) => {
-					if (e.key === " " || e.key === "Enter") {
-						setOpen((o) => !o)
-					}
 					if (e.key === "Escape") {
 						setOpen(false)
+					}
+					if ((e.key === " " || e.key === "Enter") && options.length > 0) {
+						setOpen((o) => !o)
 					}
 				}}
 				style={{
@@ -174,12 +175,13 @@ const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ options, sele
 					color: "var(--vscode-dropdown-foreground, #cccccc)",
 					minWidth: 0,
 					padding: "2px 6px 2px 8px",
-					cursor: "pointer",
+					cursor: options.length == 0 ? "not-allowed" : "pointer",
 					fontSize: 12,
 					fontFamily: "var(--vscode-font-family, inherit)",
 					boxSizing: "border-box",
 					outline: open ? "2px solid var(--vscode-focusBorder, #0078d4)" : "none",
 					margin: 0,
+					opacity: options.length == 0 ? 0.6 : 1,
 				}}
 				tabIndex={0}>
 				<span
