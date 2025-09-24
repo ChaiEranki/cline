@@ -4,7 +4,7 @@ import axios from "axios"
 import { HostProvider } from "@/hosts/host-provider"
 import { OcaAuthService } from "@/services/auth/oca/OcaAuthService"
 import { DEFAULT_OCA_BASE_URL } from "@/services/auth/oca/utils/constants"
-import { createOcaHeaders, getProxyAgents } from "@/services/auth/oca/utils/utils"
+import { createOcaHeaders, getAxiosSettings } from "@/services/auth/oca/utils/utils"
 import { Logger } from "@/services/logging/Logger"
 import { ShowMessageType } from "@/shared/proto/index.host"
 import { Controller } from ".."
@@ -18,12 +18,19 @@ import { Controller } from ".."
 export async function refreshOcaVectors(controller: Controller, request: StringRequest): Promise<VectorStores> {
 	const vectors: Record<string, VectorStoreInfo> = {}
 	const ocaAccessToken = await OcaAuthService.getInstance().getAuthToken()
+	if (!ocaAccessToken) {
+		HostProvider.window.showMessage({
+			type: ShowMessageType.ERROR,
+			message: "Not authenticated with OCA. Please sign in first.",
+		})
+		return VectorStores.create({ error: "Not authenticated with OCA" })
+	}
 	const baseUrl = request.value || DEFAULT_OCA_BASE_URL
 	const vectorsUrl = `${baseUrl}/vector_store/list`
 	const headers = await createOcaHeaders(ocaAccessToken!, "models-refresh")
 	try {
 		Logger.log(`Making refresh oca model request with customer opc-request-id: ${headers["opc-request-id"]}`)
-		const response = await axios.get(vectorsUrl, { headers, ...getProxyAgents() })
+		const response = await axios.get(vectorsUrl, { headers, ...getAxiosSettings() })
 		if (response.data && response.data.data) {
 			const vectorIds: string[] = []
 			for (const vectorStore of response.data.data) {
