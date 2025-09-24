@@ -183,7 +183,7 @@ export class OcaAuthProvider {
 				throw new Error("No ID token received from OCA")
 			}
 
-			// Step 2: Get access_token (this is what you'll use for APIs)
+			//Step 2: Get access_token (this is what you'll use for APIs)
 			const accessToken = tokenResponse.data.access_token
 			const refreshToken = tokenResponse.data.refresh_token
 			if (refreshToken) {
