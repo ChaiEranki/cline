@@ -53,7 +53,7 @@ export async function refreshOcaVectors(controller: Controller, request: StringR
 
 			// Which mode(s) to update?
 			const planActSeparateModelsSetting = controller.stateManager.getGlobalSettingsKey("planActSeparateModelsSetting")
-			const currentMode = (await controller.getCurrentMode?.()) ?? "plan"
+			const currentMode = controller.stateManager.getGlobalSettingsKey("mode")
 			const planModeSelectedVectorId: string[] = apiConfiguration?.planModeOcaVectorIds
 				? apiConfiguration?.planModeOcaVectorIds.filter(
 						(vectorId) => vectorIds.filter((secondVectorId) => vectorId === secondVectorId).length >= 1,
