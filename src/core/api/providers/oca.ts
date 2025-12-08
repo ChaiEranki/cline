@@ -1,4 +1,4 @@
-import { LiteLLMModelInfo, liteLlmDefaultModelId, liteLlmModelInfoSaneDefaults } from "@shared/api"
+import { liteLlmDefaultModelId, liteLlmModelInfoSaneDefaults, ModelInfo } from "@shared/api"
 import OpenAI, { APIError, OpenAIError } from "openai"
 import type { ChatCompletionTool as OpenAITool } from "openai/resources/chat/completions"
 import { OcaAuthService } from "@/services/auth/oca/OcaAuthService"
@@ -9,30 +9,33 @@ import {
 } from "@/services/auth/oca/utils/constants"
 import { createOcaHeaders } from "@/services/auth/oca/utils/utils"
 import { Logger } from "@/services/logging/Logger"
+import { OcaModelInfo } from "@/shared/api"
 import { ClineStorageMessage } from "@/shared/messages/content"
 import { fetch } from "@/shared/net"
-import { ApiHandler, type CommonApiHandlerOptions } from ".."
+import { type CommonApiHandlerOptions } from ".."
 import { withRetry } from "../retry"
 import { convertToOpenAiMessages } from "../transform/openai-format"
+import { convertToOpenAIResponsesInput } from "../transform/openai-response-format"
 import { ApiStream } from "../transform/stream"
 import { getOpenAIToolParams, ToolCallProcessor } from "../transform/tool-call-processor"
+import { OpenAiNativeHandler } from "./openai-native"
 
 export interface OcaHandlerOptions extends CommonApiHandlerOptions {
 	ocaBaseUrl?: string
 	ocaModelId?: string
-	ocaModelInfo?: LiteLLMModelInfo
+	ocaModelInfo?: OcaModelInfo
 	thinkingBudgetTokens?: number
 	ocaUsePromptCache?: boolean
 	taskId?: string
 	ocaMode?: string // "internal" or "external"
 }
 
-export class OcaHandler implements ApiHandler {
-	protected options: OcaHandlerOptions
-	protected client: OpenAI | undefined
+export class OcaHandler extends OpenAiNativeHandler {
+	private ocaOptions: OcaHandlerOptions
 
-	constructor(options: OcaHandlerOptions) {
-		this.options = options
+	constructor(ocaOptions: OcaHandlerOptions) {
+		super({})
+		this.ocaOptions = ocaOptions
 	}
 
 	protected initializeClient(options: OcaHandlerOptions) {
@@ -86,13 +89,13 @@ export class OcaHandler implements ApiHandler {
 		})
 	}
 
-	protected ensureClient(): OpenAI {
+	protected override ensureClient(): OpenAI {
 		if (!this.client) {
-			if (!this.options.ocaModelId) {
+			if (!this.ocaOptions.ocaModelId) {
 				throw new Error("Oracle Code Assist (OCA) model is not selected")
 			}
 			try {
-				this.client = this.initializeClient(this.options)
+				this.client = this.initializeClient(this.ocaOptions)
 			} catch (error) {
 				throw new Error(`Error creating Oracle Code Assist (OCA) client: ${error.message}`)
 			}
@@ -100,15 +103,15 @@ export class OcaHandler implements ApiHandler {
 		return this.client
 	}
 
-	async calculateCost(prompt_tokens: number, completion_tokens: number): Promise<number | undefined> {
+	async getApiCosts(prompt_tokens: number, completion_tokens: number): Promise<number | undefined> {
 		// Reference: https://github.com/BerriAI/litellm/blob/122ee634f434014267af104814022af1d9a0882f/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1473
 		const client = this.ensureClient()
-		const modelId = this.options.ocaModelId || liteLlmDefaultModelId
+		const modelId = this.ocaOptions.ocaModelId || liteLlmDefaultModelId
 		const token = await OcaAuthService.getInstance().getAuthToken()
 		if (!token) {
 			throw new OpenAIError("Unable to handle auth, Oracle Code Assist (OCA) access token is not available")
 		}
-		const ociHeaders = await createOcaHeaders(token, this.options.taskId!)
+		const ociHeaders = await createOcaHeaders(token, this.ocaOptions.taskId!)
 		Logger.log(`Making calculate cost request with customer opc-request-id: ${ociHeaders["opc-request-id"]}`)
 		try {
 			const response = await fetch(`${client.baseURL}/spend/calculate`, {
@@ -139,30 +142,47 @@ export class OcaHandler implements ApiHandler {
 	}
 
 	@withRetry()
-	async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
+	override async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
+		// const USE_RESPONSES_API = true;
+		if (this.ocaOptions.ocaModelInfo?.supportsResponsesApi) {
+			// if (this.options.ocaModelInfo?.supportsChatApi) {
+			// if (USE_RESPONSES_API) {
+			yield* this.createResponseStream(systemPrompt, messages, tools)
+		} else {
+			yield* this.createCompletionStream(systemPrompt, messages, tools)
+		}
+	}
+
+	protected override async *createCompletionStream(
+		systemPrompt: string,
+		messages: ClineStorageMessage[],
+		tools?: OpenAITool[],
+	): ApiStream {
+		console.log("Using Chat API")
 		const client = this.ensureClient()
 		const formattedMessages = convertToOpenAiMessages(messages)
 		const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
 			role: "system",
 			content: systemPrompt,
 		}
-		const modelId = this.options.ocaModelId || liteLlmDefaultModelId
+		const model = this.getModel()
+		const modelId = model.id
 		const isOminiModel = modelId.includes("o1-mini") || modelId.includes("o3-mini") || modelId.includes("o4-mini")
 
 		// Configuration for extended thinking
-		const budgetTokens = this.options.thinkingBudgetTokens || 0
+		const budgetTokens = this.ocaOptions.thinkingBudgetTokens || 0
 		const reasoningOn = budgetTokens !== 0
 		const thinkingConfig = reasoningOn ? { type: "enabled", budget_tokens: budgetTokens } : undefined
 
-		let temperature: number | undefined = this.options.ocaModelInfo?.temperature ?? 0
-		const maxTokens: number | undefined = this.options.ocaModelInfo?.maxTokens
+		let temperature: number | undefined = this.ocaOptions.ocaModelInfo?.temperature ?? 0
+		const maxTokens: number | undefined = this.ocaOptions.ocaModelInfo?.maxTokens
 
 		if (isOminiModel && reasoningOn) {
 			temperature = undefined // Thinking mode doesn't support temperature
 		}
 
 		// Define cache control object if prompt caching is enabled
-		const cacheControl = this.options.ocaUsePromptCache ? { cache_control: { type: "ephemeral" } } : undefined
+		const cacheControl = this.ocaOptions.ocaUsePromptCache ? { cache_control: { type: "ephemeral" } } : undefined
 
 		// Add cache_control to system message if enabled
 		const enhancedSystemMessage = {
@@ -194,7 +214,7 @@ export class OcaHandler implements ApiHandler {
 		const toolCallProcessor = new ToolCallProcessor()
 
 		const stream = await client.chat.completions.create({
-			model: this.options.ocaModelId || liteLlmDefaultModelId,
+			model: model.id,
 			messages: [enhancedSystemMessage, ...enhancedMessages],
 			temperature,
 			stream: true,
@@ -202,14 +222,11 @@ export class OcaHandler implements ApiHandler {
 			max_tokens: maxTokens,
 			stream_options: { include_usage: true },
 			...(thinkingConfig && { thinking: thinkingConfig }), // Add thinking configuration when applicable
-			...(this.options.taskId && {
-				litellm_session_id: `cline-${this.options.taskId}`,
+			...(this.ocaOptions.taskId && {
+				litellm_session_id: `cline-${this.ocaOptions.taskId}`,
 				...getOpenAIToolParams(tools),
 			}), // Add session ID for LiteLLM tracking
 		})
-
-		const inputCost = (await this.calculateCost(1e6, 0)) || 0
-		const outputCost = (await this.calculateCost(0, 1e6)) || 0
 
 		for await (const chunk of stream) {
 			const delta = chunk.choices[0]?.delta
@@ -241,9 +258,6 @@ export class OcaHandler implements ApiHandler {
 
 			// Handle token usage information
 			if (chunk.usage) {
-				const totalCost =
-					(inputCost * chunk.usage.prompt_tokens) / 1e6 + (outputCost * chunk.usage.completion_tokens) / 1e6
-
 				// Extract cache-related information if available
 				// Need to use type assertion since these properties are not in the standard OpenAI types
 				const usage = chunk.usage as {
@@ -258,6 +272,14 @@ export class OcaHandler implements ApiHandler {
 				const cacheWriteTokens = usage.cache_creation_input_tokens || usage.prompt_cache_miss_tokens || 0
 				const cacheReadTokens = usage.cache_read_input_tokens || usage.prompt_cache_hit_tokens || 0
 
+				const totalCost = await this.calculateCost(
+					model.info,
+					chunk.usage.prompt_tokens,
+					chunk.usage.completion_tokens,
+					cacheWriteTokens,
+					cacheReadTokens,
+				)
+
 				yield {
 					type: "usage",
 					inputTokens: usage.prompt_tokens || 0,
@@ -270,10 +292,222 @@ export class OcaHandler implements ApiHandler {
 		}
 	}
 
-	getModel() {
-		return {
-			id: this.options.ocaModelId || liteLlmDefaultModelId,
-			info: this.options.ocaModelInfo || liteLlmModelInfoSaneDefaults,
+	async *createMessageResponsesApi(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
+		console.log("Using Responses API")
+		const client = this.ensureClient()
+
+		// Convert messages to Responses API input format
+		const input = convertToOpenAIResponsesInput(messages)
+		const model = this.getModel()
+
+		// Convert ChatCompletion tools to Responses API format if provided
+		const responseTools = tools
+			?.filter((tool) => tool.type === "function")
+			.map((tool: any) => ({
+				type: "function" as const,
+				name: tool.function.name,
+				description: tool.function.description,
+				parameters: tool.function.parameters,
+				strict: tool.function.strict ?? true, // Responses API defaults to strict mode
+				reasoning: { effort: "medium", summary: "auto" },
+			}))
+
+		Logger.debug("OCA Responses Input: " + JSON.stringify(input))
+
+		// Create the response using Responses API
+		const stream = await client.responses.create({
+			model: model.id,
+			instructions: systemPrompt,
+			input,
+			stream: true,
+			tools: responseTools,
+		})
+
+		// Process the response stream
+		for await (const chunk of stream) {
+			Logger.debug("OCA Responses Chunk: " + JSON.stringify(chunk))
+
+			// Handle different event types from Responses API
+			if (chunk.type === "response.output_item.added") {
+				const item = chunk.item
+				if (item.type === "function_call" && item.id) {
+					yield {
+						type: "tool_calls",
+						id: item.id,
+						tool_call: {
+							call_id: item.call_id,
+							function: {
+								id: item.id,
+								name: item.name,
+								arguments: item.arguments,
+							},
+						},
+					}
+				}
+				if (item.type === "reasoning" && item.encrypted_content && item.id) {
+					yield {
+						type: "reasoning",
+						id: item.id,
+						reasoning: "",
+						redacted_data: item.encrypted_content,
+					}
+				}
+			}
+			if (chunk.type === "response.output_item.done") {
+				const item = chunk.item
+				if (item.type === "function_call") {
+					yield {
+						type: "tool_calls",
+						id: item.id || item.call_id,
+						tool_call: {
+							call_id: item.call_id,
+							function: {
+								id: item.id,
+								name: item.name,
+								arguments: item.arguments,
+							},
+						},
+					}
+				}
+				if (item.type === "reasoning") {
+					yield {
+						type: "reasoning",
+						id: item.id,
+						details: item.summary,
+						reasoning: "",
+					}
+				}
+			}
+			if (chunk.type === "response.reasoning_summary_part.added") {
+				yield {
+					type: "reasoning",
+					id: chunk.item_id,
+					reasoning: chunk.part.text,
+				}
+			}
+			if (chunk.type === "response.reasoning_summary_text.delta") {
+				yield {
+					type: "reasoning",
+					id: chunk.item_id,
+					reasoning: chunk.delta,
+				}
+			}
+			if (chunk.type === "response.reasoning_summary_part.done") {
+				yield {
+					type: "reasoning",
+					id: chunk.item_id,
+					details: chunk.part,
+					reasoning: "",
+				}
+			}
+			if (chunk.type === "response.output_text.delta") {
+				// Handle text content deltas
+				if (chunk.delta) {
+					yield {
+						id: chunk.item_id,
+						type: "text",
+						text: chunk.delta,
+					}
+				}
+			}
+			if (chunk.type === "response.reasoning_text.delta") {
+				// Handle reasoning content deltas
+				if (chunk.delta) {
+					yield {
+						id: chunk.item_id,
+						type: "reasoning",
+						reasoning: chunk.delta,
+					}
+				}
+			}
+			if (chunk.type === "response.function_call_arguments.delta") {
+				yield {
+					type: "tool_calls",
+					tool_call: {
+						function: {
+							id: chunk.item_id,
+							name: chunk.item_id,
+							arguments: chunk.delta,
+						},
+					},
+				}
+			}
+			if (chunk.type === "response.function_call_arguments.done") {
+				// Handle completed function call
+				if (chunk.item_id && chunk.name && chunk.arguments) {
+					yield {
+						type: "tool_calls",
+						tool_call: {
+							function: {
+								id: chunk.item_id,
+								name: chunk.name,
+								arguments: chunk.arguments,
+							},
+						},
+					}
+				}
+			}
+
+			if (
+				chunk.type === "response.incomplete" &&
+				chunk.response?.status === "incomplete" &&
+				chunk.response?.incomplete_details?.reason === "max_output_tokens"
+			) {
+				console.log("Ran out of tokens")
+				if (chunk.response?.output_text?.length > 0) {
+					console.log("Partial output:", chunk.response.output_text)
+				} else {
+					console.log("Ran out of tokens during reasoning")
+				}
+			}
+
+			if (chunk.type === "response.completed" && chunk.response?.usage) {
+				// Handle usage information when response is complete
+				const usage = chunk.response.usage
+				const inputTokens = usage.input_tokens || 0
+				const outputTokens = usage.output_tokens || 0
+				const cacheReadTokens = usage.output_tokens_details?.reasoning_tokens || 0
+				const cacheWriteTokens = usage.input_tokens_details?.cached_tokens || 0
+				const totalTokens = usage.total_tokens || 0
+				Logger.log(`Total tokens from Responses API usage: ${totalTokens}`)
+				const totalCost = await this.calculateCost(
+					model.info,
+					inputTokens,
+					outputTokens,
+					cacheWriteTokens,
+					cacheReadTokens,
+				)
+				const nonCachedInputTokens = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens)
+				yield {
+					type: "usage",
+					inputTokens: nonCachedInputTokens,
+					outputTokens: outputTokens,
+					cacheWriteTokens: cacheWriteTokens,
+					cacheReadTokens: cacheReadTokens,
+					totalCost: totalCost,
+					id: chunk.response.id,
+				}
+			}
 		}
+	}
+
+	override getModel() {
+		return {
+			id: this.ocaOptions.ocaModelId || liteLlmDefaultModelId,
+			info: this.ocaOptions.ocaModelInfo || liteLlmModelInfoSaneDefaults,
+		}
+	}
+
+	override async calculateCost(
+		modelInfo: ModelInfo,
+		inputTokens: number,
+		outputTokens: number,
+		cacheWriteTokens: number,
+		cacheReadTokens: number,
+	): Promise<number> {
+		const inputCost = (await this.getApiCosts(1e6, 0)) || 0
+		const outputCost = (await this.getApiCosts(0, 1e6)) || 0
+		const totalCost = (inputCost * inputTokens) / 1e6 + (outputCost * outputTokens) / 1e6
+		return totalCost
 	}
 }
