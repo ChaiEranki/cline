@@ -2522,6 +2522,10 @@ export class Task {
 
 			try {
 				for await (const chunk of stream) {
+					console.log(chunk)
+					if (!chunk) {
+						continue
+					}
 					switch (chunk.type) {
 						case "usage":
 							this.streamHandler.setRequestId(chunk.id)
