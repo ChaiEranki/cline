@@ -369,7 +369,6 @@ message UpdateSettingsRequest {
   optional OnboardingModelGroup onboarding_models = 33;
   optional bool cline_web_tools_enabled = 34;
   optional bool enable_parallel_tool_calling = 35;
-  optional string oca_reasoning_effort = 36;
 }
 
 message UpdateTerminalConnectionTimeoutRequest {
