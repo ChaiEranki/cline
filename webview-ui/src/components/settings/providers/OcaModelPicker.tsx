@@ -40,20 +40,22 @@ const OcaModelPicker: React.FC<OcaModelPickerProps> = ({
 				setPendingModelId(newModelId)
 				setShowRestrictedPopup(true)
 			} else {
-				const fieldChangeKeys: any = {
-					ocaModelId: { plan: "planModeOcaModelId", act: "actModeOcaModelId" },
-					ocaModelInfo: { plan: "planModeOcaModelInfo", act: "actModeOcaModelInfo" },
-					ocaReasoningEffort: { plan: "planModeOcaReasoningEffort", act: "actModeOcaReasoningEffort" },
-				}
-				const fieldChangeValues: any = {
-					ocaModelId: newModelId,
-					ocaModelInfo: ocaModels[newModelId],
-					ocaReasoningEffort:
-						ocaModels[newModelId].reasoningEffortOptions.length > 0
-							? ocaModels[newModelId].reasoningEffortOptions[0]
-							: undefined,
-				}
-				await handleModeFieldsChange(fieldChangeKeys, fieldChangeValues, currentMode)
+				await handleModeFieldsChange(
+					{
+						ocaModelId: { plan: "planModeOcaModelId", act: "actModeOcaModelId" },
+						ocaModelInfo: { plan: "planModeOcaModelInfo", act: "actModeOcaModelInfo" },
+						ocaReasoningEffort: { plan: "planModeOcaReasoningEffort", act: "actModeOcaReasoningEffort" },
+					},
+					{
+						ocaModelId: newModelId,
+						ocaModelInfo: ocaModels[newModelId],
+						ocaReasoningEffort:
+							ocaModels[newModelId].reasoningEffortOptions.length > 0
+								? ocaModels[newModelId].reasoningEffortOptions[0]
+								: undefined,
+					},
+					currentMode,
+				)
 			}
 		}
 	}
@@ -72,20 +74,22 @@ const OcaModelPicker: React.FC<OcaModelPickerProps> = ({
 
 	const onAcknowledge = async () => {
 		if (pendingModelId && ocaModels) {
-			const fieldChangeKeys: any = {
-				ocaModelId: { plan: "planModeOcaModelId", act: "actModeOcaModelId" },
-				ocaModelInfo: { plan: "planModeOcaModelInfo", act: "actModeOcaModelInfo" },
-				ocaReasoningEffort: { plan: "planModeOcaReasoningEffort", act: "actModeOcaReasoningEffort" },
-			}
-			const fieldChangeValues: any = {
-				ocaModelId: pendingModelId,
-				ocaModelInfo: ocaModels[pendingModelId],
-				ocaReasoningEffort:
-					ocaModels[pendingModelId].reasoningEffortOptions.length > 0
-						? ocaModels[pendingModelId].reasoningEffortOptions[0]
-						: undefined,
-			}
-			await handleModeFieldsChange(fieldChangeKeys, fieldChangeValues, currentMode)
+			await handleModeFieldsChange(
+				{
+					ocaModelId: { plan: "planModeOcaModelId", act: "actModeOcaModelId" },
+					ocaModelInfo: { plan: "planModeOcaModelInfo", act: "actModeOcaModelInfo" },
+					ocaReasoningEffort: { plan: "planModeOcaReasoningEffort", act: "actModeOcaReasoningEffort" },
+				},
+				{
+					ocaModelId: pendingModelId,
+					ocaModelInfo: ocaModels[pendingModelId],
+					ocaReasoningEffort:
+						ocaModels[pendingModelId].reasoningEffortOptions.length > 0
+							? ocaModels[pendingModelId].reasoningEffortOptions[0]
+							: undefined,
+				},
+				currentMode,
+			)
 			setPendingModelId(null)
 			setShowRestrictedPopup(false)
 		}
