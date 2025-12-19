@@ -107,13 +107,7 @@ const OcaModelPicker: React.FC<OcaModelPickerProps> = ({
 		}
 	}, [apiConfiguration, currentMode])
 
-	const selectedOcaModelInfo = useMemo(() => {
-		if (currentMode == "plan") {
-			return apiConfiguration?.planModeOcaModelInfo
-		} else {
-			return apiConfiguration?.actModeOcaModelInfo
-		}
-	}, [apiConfiguration, currentMode])
+	const reasoningEffortOptions = selectedModelInfo ? (selectedModelInfo as OcaModelInfo).reasoningEffortOptions : []
 
 	const modelIds = useMemo(() => {
 		return Object.keys(ocaModels || []).sort((a, b) => a.localeCompare(b))
@@ -194,9 +188,10 @@ const OcaModelPicker: React.FC<OcaModelPickerProps> = ({
 				</div>
 			) : null}
 			{!loading &&
-				selectedOcaModelInfo &&
-				selectedOcaModelInfo.supportsReasoning &&
-				selectedOcaModelInfo.reasoningEffortOptions.length >= 0 && (
+				modelIds.length > 0 &&
+				selectedModelInfo &&
+				selectedModelInfo.supportsReasoning &&
+				reasoningEffortOptions.length > 0 && (
 					<React.Fragment>
 						<label className="font-medium text-[12px] mt-[10px] mb-[2px]">Reasoning Effort</label>
 						<div className="flex items-center gap-2 mb-1">
@@ -208,7 +203,7 @@ const OcaModelPicker: React.FC<OcaModelPickerProps> = ({
 									const newValue = e.target.currentValue
 									handleReasoningEffortChange(newValue)
 								}}>
-								{selectedOcaModelInfo?.reasoningEffortOptions.map((reasoningEffort) => (
+								{reasoningEffortOptions.map((reasoningEffort) => (
 									<VSCodeOption
 										key={reasoningEffort}
 										style={{
