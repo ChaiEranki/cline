@@ -76,7 +76,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 			if (!tools?.length) {
 				throw new Error("Native Tool Call must be enabled in your setting for OpenAI Responses API")
 			}
-			yield* this.createResponseStream(systemPrompt, messages, tools)
+			yield* this.createResponseStream(systemPrompt, messages, tools, true, true)
 		} else {
 			yield* this.createCompletionStream(systemPrompt, messages, tools)
 		}
@@ -150,12 +150,15 @@ export class OpenAiNativeHandler implements ApiHandler {
 		systemPrompt: string,
 		messages: ClineStorageMessage[],
 		tools: ChatCompletionTool[],
+		useInstructionsParameter: boolean,
+		useReasoningEffort?: boolean,
+		reasoningEffort?: string,
 	): ApiStream {
 		const client = this.ensureClient()
 		const model = this.getModel()
 
 		// Convert messages to Responses API input format
-		const input = convertToOpenAIResponsesInput(messages)
+		const input = convertToOpenAIResponsesInput(messages, systemPrompt, !useInstructionsParameter)
 
 		// Convert ChatCompletion tools to Responses API format if provided
 		const responseTools = tools
@@ -172,19 +175,29 @@ export class OpenAiNativeHandler implements ApiHandler {
 
 		// const lastAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant" && msg.id)
 		// const previous_response_id = lastAssistantMessage?.id
-
-		// Create the response using Responses API
-		const stream = await client.responses.create({
+		const responsesParams: OpenAI.Responses.ResponseCreateParamsStreaming = {
 			model: model.id,
-			instructions: systemPrompt,
 			input,
 			stream: true,
 			tools: responseTools,
 			// previous_response_id,
 			// store: true,
-			reasoning: { effort: "medium", summary: "auto" },
 			// include: ["reasoning.encrypted_content"],
-		})
+		}
+
+		if (useReasoningEffort) {
+			responsesParams["reasoning"] = {
+				effort: (reasoningEffort as any) ?? "medium",
+				summary: "auto",
+			}
+		}
+
+		if (useInstructionsParameter) {
+			responsesParams["instructions"] = systemPrompt
+		}
+
+		// Create the response using Responses API
+		const stream = await client.responses.create(responsesParams)
 
 		// Process the response stream
 		for await (const chunk of stream) {

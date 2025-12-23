@@ -143,8 +143,18 @@ export class OcaHandler extends OpenAiNativeHandler {
 
 	@withRetry()
 	override async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
-		if (this.ocaOptions.ocaModelInfo?.supportsResponsesApi) {
-			yield* this.createResponseStream(systemPrompt, messages, tools ?? [])
+		const model = this.ocaOptions.ocaModelInfo
+		if (model?.supportsResponsesApi) {
+			const supportsReasoningEffort = model.supportsReasoning
+			const selectedReasoningEffort = this.ocaOptions.ocaReasoningEffort
+			yield* this.createResponseStream(
+				systemPrompt,
+				messages,
+				tools ?? [],
+				false,
+				supportsReasoningEffort,
+				selectedReasoningEffort,
+			)
 		} else {
 			yield* this.createCompletionStream(systemPrompt, messages, tools)
 		}
