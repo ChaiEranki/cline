@@ -1,4 +1,4 @@
-import { LiteLLMModelInfo, liteLlmDefaultModelId, liteLlmModelInfoSaneDefaults } from "@shared/api"
+import { liteLlmDefaultModelId, liteLlmModelInfoSaneDefaults, ModelInfo } from "@shared/api"
 import OpenAI, { APIError, OpenAIError } from "openai"
 import type { ChatCompletionTool as OpenAITool } from "openai/resources/chat/completions"
 import { OcaAuthService } from "@/services/auth/oca/OcaAuthService"
@@ -9,33 +9,36 @@ import {
 } from "@/services/auth/oca/utils/constants"
 import { createOcaHeaders } from "@/services/auth/oca/utils/utils"
 import { Logger } from "@/services/logging/Logger"
+import { OcaModelInfo } from "@/shared/api"
 import { ClineStorageMessage } from "@/shared/messages/content"
 import { fetch } from "@/shared/net"
-import { ApiHandler, type CommonApiHandlerOptions } from ".."
+import { type CommonApiHandlerOptions } from ".."
 import { withRetry } from "../retry"
 import { convertToOpenAiMessages } from "../transform/openai-format"
 import { ApiStream } from "../transform/stream"
 import { getOpenAIToolParams, ToolCallProcessor } from "../transform/tool-call-processor"
+import { OpenAiNativeHandler } from "./openai-native"
 
 export interface OcaHandlerOptions extends CommonApiHandlerOptions {
 	ocaBaseUrl?: string
 	ocaModelId?: string
-	ocaModelInfo?: LiteLLMModelInfo
+	ocaModelInfo?: OcaModelInfo
+	ocaReasoningEffort?: string
 	thinkingBudgetTokens?: number
 	ocaUsePromptCache?: boolean
 	taskId?: string
 	ocaMode?: string // "internal" or "external"
 }
 
-export class OcaHandler implements ApiHandler {
-	protected options: OcaHandlerOptions
-	protected client: OpenAI | undefined
+export class OcaHandler extends OpenAiNativeHandler {
+	protected ocaOptions: OcaHandlerOptions
 
-	constructor(options: OcaHandlerOptions) {
-		this.options = options
+	constructor(ocaOptions: OcaHandlerOptions) {
+		super({})
+		this.ocaOptions = ocaOptions
 	}
 
-	protected initializeClient(options: OcaHandlerOptions) {
+	protected initializeClient(ocaOptions: OcaHandlerOptions) {
 		return new (class OCIOpenAI extends OpenAI {
 			protected override async prepareOptions(opts: any): Promise<void> {
 				const token = await OcaAuthService.getInstance().getAuthToken()
@@ -44,7 +47,7 @@ export class OcaHandler implements ApiHandler {
 				}
 				opts.headers ??= {}
 				// OCA Headers
-				const ociHeaders = await createOcaHeaders(token, options.taskId!)
+				const ociHeaders = await createOcaHeaders(token, ocaOptions.taskId!)
 				opts.headers = { ...opts.headers, ...ociHeaders }
 				Logger.log(`Making request with customer opc-request-id: ${opts.headers?.["opc-request-id"]}`)
 				return super.prepareOptions(opts)
@@ -79,20 +82,20 @@ export class OcaHandler implements ApiHandler {
 			}
 		})({
 			baseURL:
-				options.ocaBaseUrl ||
-				(options.ocaMode === "internal" ? DEFAULT_INTERNAL_OCA_BASE_URL : DEFAULT_EXTERNAL_OCA_BASE_URL),
+				ocaOptions.ocaBaseUrl ||
+				(ocaOptions.ocaMode === "internal" ? DEFAULT_INTERNAL_OCA_BASE_URL : DEFAULT_EXTERNAL_OCA_BASE_URL),
 			apiKey: "noop",
 			fetch, // Use configured fetch with proxy support
 		})
 	}
 
-	protected ensureClient(): OpenAI {
+	override ensureClient(): OpenAI {
 		if (!this.client) {
-			if (!this.options.ocaModelId) {
+			if (!this.ocaOptions.ocaModelId) {
 				throw new Error("Oracle Code Assist (OCA) model is not selected")
 			}
 			try {
-				this.client = this.initializeClient(this.options)
+				this.client = this.initializeClient(this.ocaOptions)
 			} catch (error) {
 				throw new Error(`Error creating Oracle Code Assist (OCA) client: ${error.message}`)
 			}
@@ -100,15 +103,15 @@ export class OcaHandler implements ApiHandler {
 		return this.client
 	}
 
-	async calculateCost(prompt_tokens: number, completion_tokens: number): Promise<number | undefined> {
+	async getApiCosts(prompt_tokens: number, completion_tokens: number): Promise<number | undefined> {
 		// Reference: https://github.com/BerriAI/litellm/blob/122ee634f434014267af104814022af1d9a0882f/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1473
 		const client = this.ensureClient()
-		const modelId = this.options.ocaModelId || liteLlmDefaultModelId
+		const modelId = this.ocaOptions.ocaModelId || liteLlmDefaultModelId
 		const token = await OcaAuthService.getInstance().getAuthToken()
 		if (!token) {
 			throw new OpenAIError("Unable to handle auth, Oracle Code Assist (OCA) access token is not available")
 		}
-		const ociHeaders = await createOcaHeaders(token, this.options.taskId!)
+		const ociHeaders = await createOcaHeaders(token, this.ocaOptions.taskId!)
 		Logger.log(`Making calculate cost request with customer opc-request-id: ${ociHeaders["opc-request-id"]}`)
 		try {
 			const response = await fetch(`${client.baseURL}/spend/calculate`, {
@@ -139,30 +142,54 @@ export class OcaHandler implements ApiHandler {
 	}
 
 	@withRetry()
-	async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
+	override async *createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
+		const model = this.ocaOptions.ocaModelInfo
+		if (model?.supportsResponsesApi) {
+			const supportsReasoningEffort = model.supportsReasoning
+			const selectedReasoningEffort = this.ocaOptions.ocaReasoningEffort
+			yield* this.createResponseStream(
+				systemPrompt,
+				messages,
+				tools ?? [],
+				false,
+				supportsReasoningEffort,
+				selectedReasoningEffort,
+			)
+		} else {
+			yield* this.createCompletionStream(systemPrompt, messages, tools)
+		}
+	}
+
+	protected override async *createCompletionStream(
+		systemPrompt: string,
+		messages: ClineStorageMessage[],
+		tools?: OpenAITool[],
+	): ApiStream {
+		console.log("Using Chat API")
 		const client = this.ensureClient()
 		const formattedMessages = convertToOpenAiMessages(messages)
 		const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
 			role: "system",
 			content: systemPrompt,
 		}
-		const modelId = this.options.ocaModelId || liteLlmDefaultModelId
+		const model = this.getModel()
+		const modelId = model.id
 		const isOminiModel = modelId.includes("o1-mini") || modelId.includes("o3-mini") || modelId.includes("o4-mini")
 
 		// Configuration for extended thinking
-		const budgetTokens = this.options.thinkingBudgetTokens || 0
+		const budgetTokens = this.ocaOptions.thinkingBudgetTokens || 0
 		const reasoningOn = budgetTokens !== 0
 		const thinkingConfig = reasoningOn ? { type: "enabled", budget_tokens: budgetTokens } : undefined
 
-		let temperature: number | undefined = this.options.ocaModelInfo?.temperature ?? 0
-		const maxTokens: number | undefined = this.options.ocaModelInfo?.maxTokens
+		let temperature: number | undefined = this.ocaOptions.ocaModelInfo?.temperature ?? 0
+		const maxTokens: number | undefined = this.ocaOptions.ocaModelInfo?.maxTokens
 
 		if (isOminiModel && reasoningOn) {
 			temperature = undefined // Thinking mode doesn't support temperature
 		}
 
 		// Define cache control object if prompt caching is enabled
-		const cacheControl = this.options.ocaUsePromptCache ? { cache_control: { type: "ephemeral" } } : undefined
+		const cacheControl = this.ocaOptions.ocaUsePromptCache ? { cache_control: { type: "ephemeral" } } : undefined
 
 		// Add cache_control to system message if enabled
 		const enhancedSystemMessage = {
@@ -193,8 +220,8 @@ export class OcaHandler implements ApiHandler {
 
 		const toolCallProcessor = new ToolCallProcessor()
 
-		const stream = await client.chat.completions.create({
-			model: this.options.ocaModelId || liteLlmDefaultModelId,
+		const chatCompletionsParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+			model: modelId || liteLlmDefaultModelId,
 			messages: [enhancedSystemMessage, ...enhancedMessages],
 			temperature,
 			stream: true,
@@ -202,14 +229,17 @@ export class OcaHandler implements ApiHandler {
 			max_tokens: maxTokens,
 			stream_options: { include_usage: true },
 			...(thinkingConfig && { thinking: thinkingConfig }), // Add thinking configuration when applicable
-			...(this.options.taskId && {
-				litellm_session_id: `cline-${this.options.taskId}`,
+			...(this.ocaOptions.taskId && {
+				litellm_session_id: `cline-${this.ocaOptions.taskId}`,
 				...getOpenAIToolParams(tools),
 			}), // Add session ID for LiteLLM tracking
-		})
+		}
 
-		const inputCost = (await this.calculateCost(1e6, 0)) || 0
-		const outputCost = (await this.calculateCost(0, 1e6)) || 0
+		if (this.ocaOptions.ocaModelInfo?.supportsReasoningEffort) {
+			chatCompletionsParams["reasoning_effort"] = this.ocaOptions.ocaReasoningEffort || ("medium" as any)
+		}
+
+		const stream = await client.chat.completions.create(chatCompletionsParams)
 
 		for await (const chunk of stream) {
 			const delta = chunk.choices[0]?.delta
@@ -241,9 +271,6 @@ export class OcaHandler implements ApiHandler {
 
 			// Handle token usage information
 			if (chunk.usage) {
-				const totalCost =
-					(inputCost * chunk.usage.prompt_tokens) / 1e6 + (outputCost * chunk.usage.completion_tokens) / 1e6
-
 				// Extract cache-related information if available
 				// Need to use type assertion since these properties are not in the standard OpenAI types
 				const usage = chunk.usage as {
@@ -258,6 +285,14 @@ export class OcaHandler implements ApiHandler {
 				const cacheWriteTokens = usage.cache_creation_input_tokens || usage.prompt_cache_miss_tokens || 0
 				const cacheReadTokens = usage.cache_read_input_tokens || usage.prompt_cache_hit_tokens || 0
 
+				const totalCost = await this.calculateCost(
+					model.info,
+					chunk.usage.prompt_tokens,
+					chunk.usage.completion_tokens,
+					cacheWriteTokens,
+					cacheReadTokens,
+				)
+
 				yield {
 					type: "usage",
 					inputTokens: usage.prompt_tokens || 0,
@@ -270,10 +305,23 @@ export class OcaHandler implements ApiHandler {
 		}
 	}
 
-	getModel() {
+	override getModel() {
 		return {
-			id: this.options.ocaModelId || liteLlmDefaultModelId,
-			info: this.options.ocaModelInfo || liteLlmModelInfoSaneDefaults,
+			id: this.ocaOptions.ocaModelId || liteLlmDefaultModelId,
+			info: this.ocaOptions.ocaModelInfo || liteLlmModelInfoSaneDefaults,
 		}
+	}
+
+	override async calculateCost(
+		modelInfo: ModelInfo,
+		inputTokens: number,
+		outputTokens: number,
+		cacheWriteTokens: number,
+		cacheReadTokens: number,
+	): Promise<number> {
+		const inputCost = (await this.getApiCosts(1e6, 0)) || 0
+		const outputCost = (await this.getApiCosts(0, 1e6)) || 0
+		const totalCost = (inputCost * inputTokens) / 1e6 + (outputCost * outputTokens) / 1e6
+		return totalCost
 	}
 }

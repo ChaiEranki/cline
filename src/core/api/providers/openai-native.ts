@@ -29,13 +29,13 @@ interface OpenAiNativeHandlerOptions extends CommonApiHandlerOptions {
 
 export class OpenAiNativeHandler implements ApiHandler {
 	private options: OpenAiNativeHandlerOptions
-	private client: OpenAI | undefined
+	protected client: OpenAI | undefined
 
 	constructor(options: OpenAiNativeHandlerOptions) {
 		this.options = options
 	}
 
-	private ensureClient(): OpenAI {
+	protected ensureClient(): OpenAI {
 		if (!this.client) {
 			if (!this.options.openAiNativeApiKey) {
 				throw new Error("OpenAI API key is required")
@@ -57,7 +57,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 		const outputTokens = usage?.completion_tokens || 0
 		const cacheReadTokens = usage?.prompt_tokens_details?.cached_tokens || 0
 		const cacheWriteTokens = 0
-		const totalCost = calculateApiCostOpenAI(info, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
+		const totalCost = await this.calculateCost(info, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
 		const nonCachedInputTokens = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens)
 		yield {
 			type: "usage",
@@ -76,13 +76,13 @@ export class OpenAiNativeHandler implements ApiHandler {
 			if (!tools?.length) {
 				throw new Error("Native Tool Call must be enabled in your setting for OpenAI Responses API")
 			}
-			yield* this.createResponseStream(systemPrompt, messages, tools)
+			yield* this.createResponseStream(systemPrompt, messages, tools, true, true)
 		} else {
 			yield* this.createCompletionStream(systemPrompt, messages, tools)
 		}
 	}
 
-	private async *createCompletionStream(
+	protected async *createCompletionStream(
 		systemPrompt: string,
 		messages: ClineStorageMessage[],
 		tools?: ChatCompletionTool[],
@@ -146,16 +146,19 @@ export class OpenAiNativeHandler implements ApiHandler {
 		}
 	}
 
-	private async *createResponseStream(
+	protected async *createResponseStream(
 		systemPrompt: string,
 		messages: ClineStorageMessage[],
 		tools: ChatCompletionTool[],
+		useInstructionsParameter: boolean,
+		useReasoningEffort?: boolean,
+		reasoningEffort?: string,
 	): ApiStream {
 		const client = this.ensureClient()
 		const model = this.getModel()
 
 		// Convert messages to Responses API input format
-		const input = convertToOpenAIResponsesInput(messages)
+		const input = convertToOpenAIResponsesInput(messages, systemPrompt, !useInstructionsParameter)
 
 		// Convert ChatCompletion tools to Responses API format if provided
 		const responseTools = tools
@@ -172,19 +175,29 @@ export class OpenAiNativeHandler implements ApiHandler {
 
 		// const lastAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant" && msg.id)
 		// const previous_response_id = lastAssistantMessage?.id
-
-		// Create the response using Responses API
-		const stream = await client.responses.create({
+		const responsesParams: OpenAI.Responses.ResponseCreateParamsStreaming = {
 			model: model.id,
-			instructions: systemPrompt,
 			input,
 			stream: true,
 			tools: responseTools,
 			// previous_response_id,
 			// store: true,
-			reasoning: { effort: "medium", summary: "auto" },
 			// include: ["reasoning.encrypted_content"],
-		})
+		}
+
+		if (useReasoningEffort) {
+			responsesParams["reasoning"] = {
+				effort: (reasoningEffort as any) ?? "medium",
+				summary: "auto",
+			}
+		}
+
+		if (useInstructionsParameter) {
+			responsesParams["instructions"] = systemPrompt
+		}
+
+		// Create the response using Responses API
+		const stream = await client.responses.create(responsesParams)
 
 		// Process the response stream
 		for await (const chunk of stream) {
@@ -333,7 +346,13 @@ export class OpenAiNativeHandler implements ApiHandler {
 				const cacheWriteTokens = usage.input_tokens_details?.cached_tokens || 0
 				const totalTokens = usage.total_tokens || 0
 				Logger.log(`Total tokens from Responses API usage: ${totalTokens}`)
-				const totalCost = calculateApiCostOpenAI(model.info, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
+				const totalCost = await this.calculateCost(
+					model.info,
+					inputTokens,
+					outputTokens,
+					cacheWriteTokens,
+					cacheReadTokens,
+				)
 				const nonCachedInputTokens = Math.max(0, inputTokens - cacheReadTokens - cacheWriteTokens)
 				yield {
 					type: "usage",
@@ -348,7 +367,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 		}
 	}
 
-	getModel(): { id: OpenAiNativeModelId; info: OpenAiCompatibleModelInfo } {
+	getModel(): { id: string; info: OpenAiCompatibleModelInfo } {
 		const modelId = this.options.apiModelId
 		if (modelId && modelId in openAiNativeModels) {
 			const id = modelId as OpenAiNativeModelId
@@ -359,5 +378,15 @@ export class OpenAiNativeHandler implements ApiHandler {
 			id: openAiNativeDefaultModelId,
 			info: { ...openAiNativeModels[openAiNativeDefaultModelId] },
 		}
+	}
+
+	async calculateCost(
+		modelInfo: ModelInfo,
+		inputTokens: number,
+		outputTokens: number,
+		cacheWriteTokens: number,
+		cacheReadTokens: number,
+	) {
+		return calculateApiCostOpenAI(modelInfo, inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens)
 	}
 }
