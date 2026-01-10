@@ -1,13 +1,14 @@
 import type { StorybookConfig } from "@storybook/react-vite"
 
 const config: StorybookConfig = {
-	stories: ["../src/**/*.stories.@(ts|tsx)"],
+	stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
 	addons: [],
 	framework: "@storybook/react-vite",
 	viteFinal: async (config) => {
 		// Define environment variables for Storybook
 		config.define = {
 			...config.define,
+			"process.platform": JSON.stringify(process?.platform),
 			"process.env": {
 				...process.env,
 				IS_DEV: JSON.stringify(true),

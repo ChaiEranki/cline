@@ -1,4 +1,3 @@
-import pWaitFor from "p-wait-for"
 import * as vscode from "vscode"
 import { ExtensionRegistryInfo } from "@/registry"
 import { CommandContext } from "@/shared/proto/index.cline"
@@ -15,6 +14,13 @@ import { convertVscodeDiagnostics } from "./hostbridge/workspace/getDiagnostics"
 export async function getContextForCommand(
 	range?: vscode.Range,
 	vscodeDiagnostics?: vscode.Diagnostic[],
+	options?: {
+		/**
+		 * When true, the editor keeps focus when showing the sidebar webview.
+		 * Use this for non-interruptive flows (e.g. copy terminal output to Cline).
+		 */
+		preserveEditorFocus?: boolean
+	},
 ): Promise<
 	| undefined
 	| {
@@ -22,11 +28,8 @@ export async function getContextForCommand(
 			commandContext: CommandContext
 	  }
 > {
-	const activeWebview = await focusChatInput()
-	if (!activeWebview) {
-		return
-	}
-	// Use the controller from the last active instance
+	const activeWebview = await showWebview(options?.preserveEditorFocus ?? false)
+	// Use the controller from the active instance
 	const controller = activeWebview.controller
 
 	const editor = vscode.window.activeTextEditor
@@ -50,16 +53,8 @@ export async function getContextForCommand(
 	return { controller, commandContext }
 }
 
-export async function focusChatInput(): Promise<WebviewProvider | undefined> {
-	await vscode.commands.executeCommand(ExtensionRegistryInfo.commands.FocusChatInput)
+export async function showWebview(preserveEditorFocus: boolean = true): Promise<WebviewProvider> {
+	await vscode.commands.executeCommand(ExtensionRegistryInfo.commands.FocusChatInput, preserveEditorFocus)
 
-	// Wait for a webview instance to become available after focusing
-	await pWaitFor(() => !!WebviewProvider.getLastActiveInstance())
-	const activeWebview = WebviewProvider.getLastActiveInstance()
-	if (!activeWebview) {
-		console.error("No active webview to receive command")
-		return
-	}
-
-	return activeWebview
+	return WebviewProvider.getInstance()
 }

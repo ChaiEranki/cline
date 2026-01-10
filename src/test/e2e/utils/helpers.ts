@@ -57,7 +57,7 @@ export class E2ETestHelper {
 		return `${baseName}${projectSuffix}`
 	}
 
-	public static async waitUntil(predicate: () => boolean | Promise<boolean>, maxDelay = 5000): Promise<void> {
+	public static async waitUntil(predicate: () => boolean | Promise<boolean>, maxDelay = 10000): Promise<void> {
 		let delay = 10
 		const start = Date.now()
 
@@ -118,23 +118,12 @@ export class E2ETestHelper {
 	}
 
 	public async signin(webview: Frame): Promise<void> {
-		const byokButton = webview.getByRole("button", {
-			name: "Use your own API key",
-		})
-		await expect(byokButton).toBeVisible()
-
-		await byokButton.click()
-
-		// Complete setup with OpenRouter
-		const apiKeyInput = webview.getByRole("textbox", {
-			name: "OpenRouter API Key",
-		})
-		await apiKeyInput.fill("test-api-key")
-		await webview.getByRole("button", { name: "Let's go!" }).click()
+		await webview.getByRole("button", { name: "Login to Cline" }).click({ delay: 100 })
 
 		// Verify start up page is no longer visible
-		await expect(webview.locator("#api-provider div").first()).not.toBeVisible()
-		await expect(byokButton).not.toBeVisible()
+		await expect(webview.getByRole("button", { name: "Login to Cline" })).not.toBeVisible()
+
+		await webview.getByRole("button", { name: "Close" }).click({ delay: 50 })
 	}
 
 	public static async openClineSidebar(page: Page): Promise<void> {
@@ -319,9 +308,7 @@ export const e2e = test
 		},
 	})
 
-/**
- * Multi-root workspace variant of the e2e test fixture
- */
-export const e2eMultiRoot = e2e.extend<E2ETestConfigs>({
-	workspaceType: "multi",
-})
+export const E2E_WORKSPACE_TYPES = [
+	{ title: "Single Root", workspaceType: "single" },
+	{ title: "Multi-Roots", workspaceType: "multi" },
+] as const
