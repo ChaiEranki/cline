@@ -162,15 +162,23 @@ export function convertToOpenAIResponsesInput(messages: ClineStorageMessage[]): 
 						assistantItems.push(imageItem)
 						break
 					case "tool_use": {
-						// Function calls use call_id, not related to reasoning item ID
-						const call_id = part.call_id || part.id
-						if (part.call_id) {
-							toolUseIdToCallId.set(part.id, part.call_id)
+						// Function calls use call_id; normalize IDs so Responses API-compatible ("fc_...")
+						const normalizeFcId = (v?: string) => {
+							if (!v) return undefined
+							if (v.startsWith("fc_")) return v
+							if (v.startsWith("call_")) return v.replace(/^call_/, "fc_")
+							return v
+						}
+						const normalizedId = normalizeFcId(part.id) || `fc_${Date.now()}`
+						const call_id = normalizeFcId(part.call_id) || normalizedId
+						// Remember mapping from original tool_use id to the normalized call_id so tool_result can pair
+						if (part.id) {
+							toolUseIdToCallId.set(part.id, call_id)
 						}
 						assistantItems.push({
 							type: "function_call",
 							call_id,
-							id: part.id,
+							id: normalizedId,
 							name: part.name,
 							arguments: JSON.stringify(part.input ?? {}),
 						})
