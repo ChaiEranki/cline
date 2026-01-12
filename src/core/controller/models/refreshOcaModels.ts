@@ -16,6 +16,10 @@ import { ShowMessageType } from "@/shared/proto/index.host"
 import { GlobalStateAndSettings } from "@/shared/storage/state-keys"
 import { Controller } from ".."
 
+const isOnlyResponsesApiSupported = (modelSupportedApiList: string[]): boolean => {
+	return modelSupportedApiList.includes(RESPONSES_API) && !modelSupportedApiList.includes(CHAT_COMPLETIONS_API)
+}
+
 /**
  * Refreshes the Oca models and returns the updated model list
  * @param controller The controller instance
@@ -63,10 +67,9 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 				}
 				const modelInfo = model.model_info
 				const supportedApiList = modelInfo.supported_api_list ?? [CHAT_COMPLETIONS_API]
-				const apiFormat: ApiFormat =
-					supportedApiList.includes(RESPONSES_API) && !supportedApiList.includes(CHAT_COMPLETIONS_API)
-						? ApiFormat.OPENAI_RESPONSES
-						: ApiFormat.OPENAI_CHAT
+				const apiFormat: ApiFormat = isOnlyResponsesApiSupported(supportedApiList)
+					? ApiFormat.OPENAI_RESPONSES
+					: ApiFormat.OPENAI_CHAT
 				console.log(modelId, supportedApiList)
 				models[modelId] = OcaModelInfo.create({
 					maxTokens: model.litellm_params?.max_tokens || -1,
