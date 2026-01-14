@@ -165,9 +165,38 @@ export class OcaHandler implements ApiHandler {
 		}
 	}
 
+	convertToolsToChatFormat(
+		messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+	): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+		const updateToolCallId = (toolCallId: string) => {
+			return toolCallId.replace("fc", "call").substring(0, 29)
+		}
+
+		return messages.map((message) => {
+			if (message.role == "tool") {
+				const tool_call_id = message.tool_call_id
+				if (tool_call_id.startsWith("fc")) {
+					message.tool_call_id = updateToolCallId(tool_call_id)
+				}
+			} else if (message.role == "assistant" && message.tool_calls) {
+				const new_tool_calls = message.tool_calls.map((toolCall) => {
+					if (toolCall.id.startsWith("fc")) {
+						toolCall.id = updateToolCallId(toolCall.id)
+					}
+					return toolCall
+				})
+				message.tool_calls = new_tool_calls
+			}
+			return message
+		})
+	}
+
 	async *createMessageChatApi(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
 		const client = this.ensureClient()
-		const formattedMessages = convertToOpenAiMessages(messages)
+
+		let formattedMessages = convertToOpenAiMessages(messages)
+		formattedMessages = this.convertToolsToChatFormat(formattedMessages)
+
 		const systemMessage: OpenAI.Chat.ChatCompletionSystemMessageParam = {
 			role: "system",
 			content: systemPrompt,
@@ -302,14 +331,35 @@ export class OcaHandler implements ApiHandler {
 		}
 	}
 
+	convertIdToResponseFormat(input: OpenAI.Responses.ResponseInputItem[]): OpenAI.Responses.ResponseInputItem[] {
+		const updateToolCallId = (toolCallId: string) => {
+			return toolCallId.replace("call", "fc")
+		}
+
+		return input.map((message) => {
+			if (message.type == "function_call" || message.type == "function_call_output") {
+				const id = message.id
+				const callId = message.call_id
+				if (id && id.startsWith("call")) {
+					message.id = updateToolCallId(id)
+				}
+				if (callId && callId.startsWith("call")) {
+					message.call_id = updateToolCallId(callId)
+				}
+			}
+			return message
+		})
+	}
+
 	async *createMessageResponsesApi(systemPrompt: string, messages: ClineStorageMessage[], tools?: OpenAITool[]): ApiStream {
 		const client = this.ensureClient()
 
 		// Convert messages to Responses API input format
-		const input: OpenAI.Responses.ResponseInputItem[] = [
+		let input: OpenAI.Responses.ResponseInputItem[] = [
 			{ role: "system", content: systemPrompt },
 			...convertToOpenAIResponsesInput(messages),
 		]
+		input = this.convertIdToResponseFormat(input)
 
 		// Convert ChatCompletion tools to Responses API format if provided
 		const responseTools = tools
