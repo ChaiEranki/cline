@@ -332,15 +332,19 @@ export class OcaHandler implements ApiHandler {
 	}
 
 	convertIdToResponseFormat(input: OpenAI.Responses.ResponseInputItem[]): OpenAI.Responses.ResponseInputItem[] {
+		const updateToolCallId = (toolCallId: string) => {
+			return toolCallId.replace("call", "fc")
+		}
+
 		return input.map((message) => {
 			if (message.type == "function_call" || message.type == "function_call_output") {
 				const id = message.id
 				const callId = message.call_id
 				if (id && id.startsWith("call")) {
-					message.id = id.replace("call", "fc")
+					message.id = updateToolCallId(id)
 				}
 				if (callId && callId.startsWith("call")) {
-					message.call_id = callId.replace("call", "fc")
+					message.call_id = updateToolCallId(callId)
 				}
 			}
 			return message
