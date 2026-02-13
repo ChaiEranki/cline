@@ -7,6 +7,7 @@ import {
 	CHAT_COMPLETIONS_API,
 	DEFAULT_EXTERNAL_OCA_BASE_URL,
 	DEFAULT_INTERNAL_OCA_BASE_URL,
+	MESSAGES_API,
 	RESPONSES_API,
 } from "@/services/auth/oca/utils/constants"
 import { createOcaHeaders } from "@/services/auth/oca/utils/utils"
@@ -63,9 +64,12 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 				}
 				const modelInfo = model.model_info
 				const supportedApiList = modelInfo.supported_api_list ?? [CHAT_COMPLETIONS_API]
-				const apiFormat: ApiFormat = supportedApiList.includes(RESPONSES_API)
-					? ApiFormat.OPENAI_RESPONSES
-					: ApiFormat.OPENAI_CHAT
+				let apiFormat: ApiFormat = ApiFormat.OPENAI_CHAT;
+				if (supportedApiList.includes(RESPONSES_API) && !supportedApiList.includes(CHAT_COMPLETIONS_API)) {
+					apiFormat = ApiFormat.OPENAI_RESPONSES;
+				} else if (supportedApiList.includes(MESSAGES_API) && !supportedApiList.includes(CHAT_COMPLETIONS_API)) {
+					apiFormat = ApiFormat.ANTHROPIC_CHAT;
+				}
 				models[modelId] = OcaModelInfo.create({
 					maxTokens: model.litellm_params?.max_tokens || -1,
 					contextWindow: modelInfo.context_window,
