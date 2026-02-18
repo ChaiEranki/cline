@@ -1,11 +1,12 @@
-import { Anthropic } from "@anthropic-ai/sdk"
-import { Stream as AnthropicStream } from "@anthropic-ai/sdk/streaming"
-import { ApiStream } from "../transform/stream"
+import { Anthropic } from "@anthropic-ai/sdk";
+import { Stream as AnthropicStream } from "@anthropic-ai/sdk/streaming";
+import { ApiStream } from "../transform/stream";
 
 export async function* handleAnthropicMessagesApiStreamResponse(
 	stream: AnthropicStream<Anthropic.RawMessageStreamEvent>,
 ): ApiStream {
 	const lastStartedToolCall = { id: "", name: "", arguments: "" }
+
 
 	for await (const chunk of stream) {
 		switch (chunk?.type) {
