@@ -13,16 +13,22 @@ export interface FeaturedModel {
 export const FEATURED_MODELS: { recommended: FeaturedModel[]; free: FeaturedModel[] } = {
 	recommended: [
 		{
-			id: "anthropic/claude-opus-4.6",
-			name: "Claude Opus 4.6",
-			description: "State-of-the-art for complex coding",
-			labels: ["BEST"],
+			id: "google/gemini-3.1-pro-preview",
+			name: "Gemini 3.1 Pro Preview",
+			description: "Latest Gemini release with 1m ctx window and strong coding performance",
+			labels: ["NEW"],
 		},
 		{
 			id: "anthropic/claude-sonnet-4.6",
 			name: "Claude Sonnet 4.6",
-			description: "Best balance of speed, cost, and quality",
+			description: "Latest Sonnet release with strong coding and agent performance",
 			labels: ["NEW"],
+		},
+		{
+			id: "anthropic/claude-opus-4.6",
+			name: "Claude Opus 4.6",
+			description: "Most intelligent model for agents and coding",
+			labels: ["BEST"],
 		},
 		{
 			id: "openai/gpt-5.2-codex",
@@ -33,9 +39,9 @@ export const FEATURED_MODELS: { recommended: FeaturedModel[]; free: FeaturedMode
 	],
 	free: [
 		{
-			id: "anthropic/claude-sonnet-4.6",
-			name: "Claude Sonnet 4.6",
-			description: "Best balance of speed, cost, and quality, now free in Cline",
+			id: "minimax/minimax-m2.5",
+			name: "MiniMax M2.5",
+			description: "MiniMax-M2.5 is a lightweight, state-of-the-art LLM optimized for coding and agentic workflows",
 			labels: ["FREE"],
 		},
 		{

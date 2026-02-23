@@ -1,16 +1,26 @@
 # cline
 
+## 2.4.2
 
-## [2.4.0]
+### Added
 
-### Changes
-
-- Adding Anthropic Sonnet 4.6 
-
-## [2.3.0]
+- Gemini-3.1 Pro Preview
 
 ### Patch Changes
 
+- VSCode uses shared files for global, workspace and secret state.
+
+## [2.4.1]
+
+### Fixed
+
+- Fix infinite retry loop when write_to_file fails with missing content parameter. Provides progressive guidance to the model, escalating from suggestions to hard stops, with context window awareness to break the loop.
+
+## [2.4.0]
+
+### Added
+
+- Adding Anthropic Sonnet 4.6
 - Allows users to enter custom aws region when selecting bedrock as a provider in CLI
 - Keep reasoning rows visible when low-stakes tool groups start immediately after reasoning.
 - Restore reasoning trace visibility in chat and improve the thinking row UX so streamed reasoning is visible, then collapsible after completion.
