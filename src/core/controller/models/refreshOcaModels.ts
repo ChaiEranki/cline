@@ -39,6 +39,7 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 		Logger.log(`Making refresh oca model request with customer opc-request-id: ${headers["opc-request-id"]}`)
 		const response = await axios.get(modelsUrl, { headers, ...getAxiosSettings() })
 		if (response.data?.data) {
+			console.log("Model response: ", response.data)
 			if (response.data.data.length === 0) {
 				HostProvider.window.showMessage({
 					type: ShowMessageType.ERROR,

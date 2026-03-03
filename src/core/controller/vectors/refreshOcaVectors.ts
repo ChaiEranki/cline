@@ -27,9 +27,9 @@ export async function refreshOcaVectors(controller: Controller, request: StringR
 	}
 	const baseUrl = request.value || DEFAULT_OCA_BASE_URL
 	const vectorsUrl = `${baseUrl}/vector_store/list`
-	const headers = await createOcaHeaders(ocaAccessToken!, "models-refresh")
+	const headers = await createOcaHeaders(ocaAccessToken!, "vectors-refresh")
 	try {
-		Logger.log(`Making refresh oca model request with customer opc-request-id: ${headers["opc-request-id"]}`)
+		Logger.log(`Making refresh oca vector request with customer opc-request-id: ${headers["opc-request-id"]}`)
 		const response = await axios.get(vectorsUrl, { headers, ...getAxiosSettings() })
 		if (response.data && response.data.data) {
 			const vectorIds: string[] = []
