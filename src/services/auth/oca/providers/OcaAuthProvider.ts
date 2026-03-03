@@ -104,10 +104,12 @@ export class OcaAuthProvider {
 				headers: { "Content-Type": "application/x-www-form-urlencoded" },
 				...getAxiosSettings(),
 			})
+			console.log("Successful response: ", tokenResponse)
 			const accessToken = tokenResponse.data.access_token
 			const userInfo: OcaUserInfo = await this.getUserAccountInfo(accessToken)
 			return { user: userInfo, apiKey: accessToken }
 		} catch (err: unknown) {
+			console.log(err)
 			const isAxios = (axios as any)?.isAxiosError?.(err)
 			const status = isAxios ? (err as any).response?.status : undefined
 			const data: any = isAxios ? (err as any).response?.data : undefined
@@ -161,6 +163,7 @@ export class OcaAuthProvider {
 			OcaAuthProvider.pkceStateMap.delete(state)
 			const discovery = await axios.get(`${idcs_url}/.well-known/openid-configuration`, { ...getAxiosSettings() })
 			const tokenEndpoint = discovery.data.token_endpoint
+			console.log("Sign In Token Endpoint: ", tokenEndpoint)
 			const params: any = {
 				grant_type: "authorization_code",
 				code,
@@ -183,7 +186,7 @@ export class OcaAuthProvider {
 				throw new Error("No ID token received from OCA")
 			}
 
-			// Step 2: Get access_token (this is what you'll use for APIs)
+			//Step 2: Get access_token (this is what you'll use for APIs)
 			const accessToken = tokenResponse.data.access_token
 			const refreshToken = tokenResponse.data.refresh_token
 			if (refreshToken) {
