@@ -14,6 +14,8 @@ import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandler
 import OcaModelPicker from "./OcaModelPicker"
 import OcaVectorPicker from "./OcaVectorPicker"
 
+const KB_UNSUPPORTED_API_FORMATS = [ApiFormat.OPENAI_RESPONSES, ApiFormat.ANTHROPIC_CHAT]
+
 /**
  * Props for the OcaProvider component
  */
@@ -332,7 +334,11 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 		return normalizeApiConfiguration(apiConfiguration, currentMode)
 	}, [apiConfiguration, currentMode])
 
-	const isAnthropicChatModel = selectedModelInfo?.apiFormat === ApiFormat.ANTHROPIC_CHAT
+	let isNotKbSupportedModel = false
+	if (selectedModelInfo.apiFormat !== undefined) {
+		isNotKbSupportedModel = KB_UNSUPPORTED_API_FORMATS.includes(selectedModelInfo?.apiFormat)
+		console.log(isNotKbSupportedModel)
+	}
 
 	const handleToggleMode = (nextMode: "internal" | "external") => {
 		handleFieldChange("ocaMode", nextMode)
@@ -490,7 +496,7 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 					<OcaVectorPicker
 						apiConfiguration={apiConfiguration}
 						currentMode={currentMode}
-						disabled={isAnthropicChatModel}
+						disabled={isNotKbSupportedModel}
 						disabledMessage="Knowledge bases are not supported for the selected model."
 						lastRefreshedAt={kbsLastRefreshedAt}
 						loading={ocaKbsLoading}

@@ -403,19 +403,19 @@ export class OcaHandler implements ApiHandler {
 				strict: tool.function.strict ?? true, // Responses API defaults to strict mode
 			}))
 
-		const toolsWithVectorStore = responseTools ?? []
-		if (this.getVectorStores().length > 0) {
-			toolsWithVectorStore.push({
-				type: "file_search",
-				vector_store_ids: this.getVectorStores(),
-			} as any)
-		}
+		// const toolsWithVectorStore = responseTools ?? []
+		// if (this.getVectorStores().length > 0) {
+		// 	toolsWithVectorStore.push({
+		// 		type: "file_search",
+		// 		vector_store_ids: this.getVectorStores(),
+		// 	} as any)
+		// }
 
 		const responsesParams: OpenAI.Responses.ResponseCreateParamsStreaming = {
 			model: this.options.ocaModelId || liteLlmDefaultModelId,
 			input,
 			stream: true,
-			tools: toolsWithVectorStore,
+			tools: responseTools,
 		}
 
 		const ocaModelInfo = this.options.ocaModelInfo
