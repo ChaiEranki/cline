@@ -1,4 +1,5 @@
 import type { OcaModelInfo } from "@shared/api"
+import { ApiFormat } from "@shared/proto/cline/models"
 import type { OcaAuthState, OcaUserInfo, VectorStoreInfo } from "@shared/proto/index.cline"
 import { EmptyRequest, StringRequest } from "@shared/proto/index.cline"
 import { Mode } from "@shared/storage/types"
@@ -8,6 +9,7 @@ import { useExtensionState } from "@/context/ExtensionStateContext"
 import { ModelsServiceClient, OcaAccountServiceClient, VectorsServiceClient } from "@/services/grpc-client"
 import { VSC_BUTTON_BACKGROUND, VSC_BUTTON_FOREGROUND, VSC_DESCRIPTION_FOREGROUND } from "@/utils/vscStyles"
 import { BaseUrlField } from "../common/BaseUrlField"
+import { normalizeApiConfiguration } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 import OcaModelPicker from "./OcaModelPicker"
 import OcaVectorPicker from "./OcaVectorPicker"
@@ -326,6 +328,12 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 	const ocaBaseUrl = apiConfiguration?.ocaBaseUrl || ""
 	const ocaMode = apiConfiguration?.ocaMode
 
+	const { selectedModelInfo } = React.useMemo(() => {
+		return normalizeApiConfiguration(apiConfiguration, currentMode)
+	}, [apiConfiguration, currentMode])
+
+	const isAnthropicChatModel = selectedModelInfo?.apiFormat === ApiFormat.ANTHROPIC_CHAT
+
 	const handleToggleMode = (nextMode: "internal" | "external") => {
 		handleFieldChange("ocaMode", nextMode)
 	}
@@ -482,6 +490,8 @@ export const OcaProvider = ({ isPopup, currentMode }: OcaProviderProps) => {
 					<OcaVectorPicker
 						apiConfiguration={apiConfiguration}
 						currentMode={currentMode}
+						disabled={isAnthropicChatModel}
+						disabledMessage="Knowledge bases are not supported for the selected model."
 						lastRefreshedAt={kbsLastRefreshedAt}
 						loading={ocaKbsLoading}
 						ocaKbs={ocaKbs}

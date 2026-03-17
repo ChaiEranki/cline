@@ -2,7 +2,7 @@ import type { ApiConfiguration } from "@shared/api"
 import { VectorStoreInfo } from "@shared/proto/index.cline"
 import { Mode } from "@shared/storage/types"
 import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { normalizeApiConfiguration } from "../utils/providerUtils"
 import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandlers"
 
@@ -13,23 +13,33 @@ export interface OcaVectorPickerProps {
 	onRefresh: () => void | Promise<void>
 	loading?: boolean
 	lastRefreshedAt?: number | null
+	disabled?: boolean
+	disabledMessage?: string
 }
 
-const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
+export const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 	apiConfiguration,
 	currentMode,
 	ocaKbs,
 	onRefresh,
 	loading,
 	lastRefreshedAt,
+	disabled = false,
+	disabledMessage,
 }: OcaVectorPickerProps) => {
 	const { handleModeFieldChange } = useApiConfigurationHandlers()
 
 	const handleKbChange = async (kbs: string[]) => {
+		if (disabled) {
+			return
+		}
 		await handleModeFieldChange({ plan: "planModeOcaVectorIds", act: "actModeOcaVectorIds" }, kbs, currentMode)
 	}
 
 	const handleRefreshToken = async () => {
+		if (disabled) {
+			return
+		}
 		await onRefresh?.()
 	}
 
@@ -46,6 +56,9 @@ const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 	}, [lastRefreshedAt])
 
 	const toggleOption = async (option: { id: string; name: string }) => {
+		if (disabled) {
+			return
+		}
 		const prevVectorIds = selectedVectorIds || []
 		const newVectorIds = prevVectorIds.includes(option.id)
 			? prevVectorIds.filter((o) => o !== option.id)
@@ -54,33 +67,32 @@ const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 	}
 
 	return (
-		<div className="w-full" style={{ height: "100%", marginTop: "10px" }}>
+		<div className="w-full mt-[10px]">
 			<style>{`
-				#knowledge-base-id::part(listbox){
-					max-height: 100px;
+				#oca-vector-picker-trigger-listbox {
+					max-height: 120px;
 					overflow: auto;
 				}
 			`}</style>
-			<label className="font-medium text-[12px] mt-[10px] mb-[2px]">Knowledge Base</label>
-			<div
-				className="relative z-[100] flex items-center gap-2 mb-1"
-				style={{
-					height: "100%",
-				}}>
+			<label className="font-medium text-[12px] mb-[4px] block" htmlFor="oca-vector-picker-trigger">
+				Knowledge Base
+			</label>
+			<div className="flex items-center gap-2 mb-1">
 				<MultiSelectDropdown
+					buttonId="oca-vector-picker-trigger"
 					className="flex-1 text-[12px] min-h-[24px]"
-					id="knowledge-base-id"
-					options={kbIds.map((kbId) => {
-						return {
-							id: kbId,
-							name: ocaKbs[kbId].name,
-						}
-					})}
+					disabled={disabled || kbIds.length === 0}
+					emptyLabel={kbIds.length === 0 ? "No knowledge bases found" : undefined}
+					loading={!!loading}
+					options={kbIds.map((kbId) => ({
+						id: kbId,
+						name: ocaKbs[kbId].name,
+					}))}
 					selectedIds={selectedVectorIds || []}
 					toggleOption={toggleOption}
 				/>
 				<VSCodeButton
-					disabled={!!loading}
+					disabled={!!loading || disabled}
 					onClick={handleRefreshToken}
 					style={{
 						fontSize: 14,
@@ -93,7 +105,9 @@ const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 					{loading ? "Refreshing…" : "Refresh"}
 				</VSCodeButton>
 			</div>
-			{lastRefreshedText ? (
+			{disabled && disabledMessage ? (
+				<div className="text-[11px] text-[var(--vscode-descriptionForeground)] mt-1 mb-2">{disabledMessage}</div>
+			) : lastRefreshedText ? (
 				<div className="text-[11px] text-[var(--vscode-descriptionForeground)] mt-0 mb-2">
 					Last refreshed at {lastRefreshedText}
 				</div>
@@ -102,11 +116,12 @@ const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 	)
 }
 
-export default OcaVectorPicker
-
 interface MultiSelectDropdownProps {
+	buttonId?: string
 	className?: string
-	id?: string
+	disabled?: boolean
+	emptyLabel?: string
+	loading?: boolean
 	options: {
 		id: string
 		name: string
@@ -115,177 +130,256 @@ interface MultiSelectDropdownProps {
 	toggleOption: (option: { id: string; name: string }) => Promise<void>
 }
 
-const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ options, selectedIds, toggleOption, className, id }) => {
-	const [open, setOpen] = useState<boolean>(false)
+const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
+	buttonId,
+	className,
+	disabled = false,
+	emptyLabel,
+	loading = false,
+	options,
+	selectedIds,
+	toggleOption,
+}) => {
+	const triggerId = buttonId || useId()
+	const listboxId = `${triggerId}-listbox`
 	const wrapperRef = useRef<HTMLDivElement>(null)
+	const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
+	const [open, setOpen] = useState(false)
+	const [activeIndex, setActiveIndex] = useState<number>(-1)
+
+	const hasOptions = options.length > 0
+	const isInteractive = hasOptions && !disabled
+
+	const selectedNames = useMemo(() => {
+		if (!selectedIds.length) {
+			return []
+		}
+		return selectedIds
+			.map((selectedId) => options.find((option) => option.id === selectedId)?.name)
+			.filter((name): name is string => Boolean(name))
+	}, [options, selectedIds])
+
+	const selectionSummary = useMemo(() => {
+		if (!hasOptions) {
+			return emptyLabel ?? "No data"
+		}
+		if (!selectedNames.length) {
+			return "Select knowledge bases"
+		}
+		if (selectedNames.length <= 2) {
+			return selectedNames.join(", ")
+		}
+		return `${selectedNames.slice(0, 2).join(", ")} +${selectedNames.length - 2} more`
+	}, [emptyLabel, hasOptions, selectedNames])
+
+	const closeDropdown = useCallback(() => {
+		setOpen(false)
+		setActiveIndex(-1)
+	}, [])
+
+	const openDropdown = useCallback(() => {
+		if (!isInteractive) {
+			return
+		}
+		setOpen(true)
+		const firstSelectedIndex = selectedIds.length ? options.findIndex((option) => option.id === selectedIds[0]) : 0
+		setActiveIndex(firstSelectedIndex >= 0 ? firstSelectedIndex : 0)
+	}, [isInteractive, options, selectedIds])
 
 	useEffect(() => {
-		function handleClickOutside(event: MouseEvent) {
+		if (!open) {
+			return
+		}
+		const handleClickOutside = (event: MouseEvent) => {
 			if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
-				setOpen(false)
+				closeDropdown()
 			}
 		}
 		document.addEventListener("mousedown", handleClickOutside)
-		return () => document.removeEventListener("mousedown", handleClickOutside)
-	}, [])
+		return () => {
+			document.removeEventListener("mousedown", handleClickOutside)
+		}
+	}, [closeDropdown, open])
 
-	const selectedLabel =
-		selectedIds.length === 0 || options.length === 0
-			? "Select options..."
-			: selectedIds.map((selectedId) => options.filter((option) => selectedId === option.id)[0].name).join(", ")
+	useEffect(() => {
+		if (!open || activeIndex < 0) {
+			return
+		}
+		optionRefs.current[activeIndex]?.focus({ preventScroll: false })
+	}, [activeIndex, open])
+
+	const handleToggleOption = useCallback(
+		async (index: number) => {
+			const option = options[index]
+			if (!option) {
+				return
+			}
+			await toggleOption(option)
+		},
+		[options, toggleOption],
+	)
+
+	const handleTriggerKeyDown = useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>) => {
+			if (!isInteractive) {
+				return
+			}
+			if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+				event.preventDefault()
+				openDropdown()
+			}
+			if (event.key === "Enter" || event.key === " ") {
+				event.preventDefault()
+				setOpen((prev) => {
+					if (!prev) {
+						openDropdown()
+						return true
+					}
+					closeDropdown()
+					return false
+				})
+			}
+		},
+		[closeDropdown, isInteractive, openDropdown],
+	)
+
+	const handleListKeyDown = useCallback(
+		async (event: React.KeyboardEvent<HTMLDivElement>) => {
+			if (event.key === "Escape") {
+				event.preventDefault()
+				closeDropdown()
+				return
+			}
+			if (event.key === "Tab") {
+				closeDropdown()
+				return
+			}
+			if (event.key === "ArrowDown") {
+				event.preventDefault()
+				setActiveIndex((prev) => (prev + 1) % options.length)
+				return
+			}
+			if (event.key === "ArrowUp") {
+				event.preventDefault()
+				setActiveIndex((prev) => (prev - 1 + options.length) % options.length)
+				return
+			}
+			if (event.key === "Home") {
+				event.preventDefault()
+				setActiveIndex(0)
+				return
+			}
+			if (event.key === "End") {
+				event.preventDefault()
+				setActiveIndex(options.length - 1)
+				return
+			}
+			if (event.key === " " || event.key === "Enter") {
+				event.preventDefault()
+				if (activeIndex >= 0) {
+					await handleToggleOption(activeIndex)
+				}
+			}
+		},
+		[activeIndex, closeDropdown, handleToggleOption, options.length],
+	)
 
 	return (
-		<div
-			className={className}
-			id={id}
-			ref={wrapperRef}
-			style={{
-				position: "relative",
-				width: "100%",
-				minWidth: 0,
-				height: "100%",
-				zIndex: 100,
-			}}>
-			{/* VSCode style dropdown button */}
-			<div
-				aria-disabled={options.length == 0}
+		<div className={`relative ${className ?? ""}`} ref={wrapperRef}>
+			<button
+				aria-controls={listboxId}
+				aria-disabled={!isInteractive}
 				aria-expanded={open}
 				aria-haspopup="listbox"
-				onClick={() => options.length > 0 && setOpen((o) => !o)}
-				onKeyDown={(e) => {
-					if (e.key === "Escape") {
-						setOpen(false)
-					}
-					if ((e.key === " " || e.key === "Enter") && options.length > 0) {
-						setOpen((o) => !o)
-					}
-				}}
-				style={{
-					display: "flex",
-					alignItems: "center",
-					position: "absolute",
-					top: 0,
-					left: 0,
-					bottom: 0,
-					right: 0,
-					minHeight: "100%",
-					border: "1px solid var(--vscode-dropdown-border, #3c3c3c)",
-					borderRadius: "calc(var(--corner-radius-round) * 1px)",
-					background: "var(--vscode-dropdown-background, #1e1e1e)",
-					color: "var(--vscode-dropdown-foreground, #cccccc)",
-					minWidth: 0,
-					padding: "2px 6px 2px 8px",
-					cursor: options.length == 0 ? "not-allowed" : "pointer",
-					fontSize: 12,
-					fontFamily: "var(--vscode-font-family, inherit)",
-					boxSizing: "border-box",
-					outline: open ? "2px solid var(--vscode-focusBorder, #0078d4)" : "none",
-					margin: 0,
-					opacity: options.length == 0 ? 0.6 : 1,
-				}}
-				tabIndex={0}>
-				<span
-					style={{
-						overflow: "hidden",
-						height: "100%",
-						whiteSpace: "nowrap",
-						textOverflow: "ellipsis",
-						userSelect: "none",
-						flex: 1,
-					}}
-					title={selectedLabel}>
-					{selectedLabel}
+				className={`flex w-full min-h-[28px] items-center gap-2 rounded-[var(--corner-radius-round)] border border-[var(--vscode-dropdown-border,#3c3c3c)] bg-[var(--vscode-dropdown-background,#1e1e1e)] px-2 py-[2px] text-left text-[12px] leading-[18px] text-[var(--vscode-dropdown-foreground,#cccccc)] transition-[outline] ${
+					isInteractive ? "cursor-pointer" : "cursor-not-allowed opacity-60"
+				}`}
+				disabled={!isInteractive}
+				id={triggerId}
+				onClick={() => (open ? closeDropdown() : openDropdown())}
+				onKeyDown={handleTriggerKeyDown}
+				type="button">
+				<span className="flex-1 truncate" title={selectionSummary}>
+					{selectionSummary}
 				</span>
-				<svg
-					className="select-indicator"
-					fill="currentColor"
-					height="16"
-					style={{}}
-					viewBox="0 0 16 16"
-					width="16"
-					xmlns="http://www.w3.org/2000/svg">
-					<path
-						clip-rule="evenodd"
-						d="M7.976 10.072l4.357-4.357.62.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"
-						fill-rule="evenodd"
-					/>
-				</svg>
-			</div>
+				{loading ? (
+					<span className="text-[11px] text-[var(--vscode-descriptionForeground)]">Loading…</span>
+				) : (
+					<svg
+						aria-hidden
+						className="h-4 w-4 flex-shrink-0"
+						fill="currentColor"
+						viewBox="0 0 16 16"
+						xmlns="http://www.w3.org/2000/svg">
+						<path
+							clipRule="evenodd"
+							d="M7.976 10.072 12.333 5.715l.62.618L8.284 11h-.618L3 6.333l.619-.618 4.357 4.357z"
+							fillRule="evenodd"
+						/>
+					</svg>
+				)}
+			</button>
 
 			{open && (
 				<div
+					aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${options[activeIndex]?.id}` : undefined}
+					aria-labelledby={triggerId}
+					className="absolute left-0 right-0 z-50 mt-1 max-h-[160px] overflow-y-auto rounded-[var(--corner-radius-round)] border border-[var(--vscode-dropdown-border,#3c3c3c)] bg-[var(--vscode-dropdown-background,#1e1e1e)] shadow-[0_4px_20px_rgba(0,0,0,0.35)]"
+					id={listboxId}
+					onKeyDown={handleListKeyDown}
 					role="listbox"
-					style={{
-						position: "absolute",
-						top: "100%",
-						left: 0,
-						right: 0,
-						zIndex: 1000,
-						background: "var(--vscode-dropdown-background, #1e1e1e)",
-						border: "1px solid var(--vscode-dropdown-border, #3c3c3c)",
-						borderRadius: "calc(var(--corner-radius-round) * 1px)",
-						boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-						color: "var(--vscode-dropdown-foreground, #cccccc)",
-						fontSize: 13,
-						fontFamily: "inherit",
-						padding: 4,
-						maxHeight: "100px",
-						overflowY: "auto",
-						margin: 0,
-						marginTop: 2,
-					}}>
-					{options.map((option) => {
-						const checked = selectedIds.includes(option.id)
-						return (
-							<div
-								aria-selected={checked}
-								key={option.id}
-								onClick={async (e) => {
-									e.stopPropagation()
-									await toggleOption(option)
-								}}
-								onKeyDown={async (e) => {
-									if (e.key === " " || e.key === "Enter") {
-										await toggleOption(option)
-									}
-								}}
-								role="option"
-								style={{
-									display: "flex",
-									alignItems: "center",
-									padding: "4px 8px",
-									margin: 0,
-									borderRadius: 3,
-									cursor: "pointer",
-									background: checked ? "var(--vscode-list-activeSelectionBackground, #094771)" : "transparent",
-									color: checked
-										? "var(--vscode-list-activeSelectionForeground, #fff)"
-										: "var(--vscode-dropdown-foreground, #cccccc)",
-								}}
-								tabIndex={0}>
-								<input
-									checked={checked}
-									readOnly
-									style={{
-										accentColor: "var(--vscode-checkbox-foreground, #0078d4)",
-										marginRight: 8,
+					tabIndex={-1}>
+					{!hasOptions ? (
+						<div className="px-3 py-2 text-[12px] text-[var(--vscode-descriptionForeground)]" role="presentation">
+							{emptyLabel ?? "No knowledge bases available"}
+						</div>
+					) : (
+						options.map((option, index) => {
+							const checked = selectedIds.includes(option.id)
+							const isActive = index === activeIndex
+							return (
+								<button
+									aria-checked={checked}
+									className={`flex w-full items-center gap-2 px-3 py-[6px] text-left text-[12px] leading-[18px] ${
+										checked
+											? "bg-[var(--vscode-list-activeSelectionBackground,#094771)] text-[var(--vscode-list-activeSelectionForeground,#ffffff)]"
+											: isActive
+												? "bg-[var(--vscode-list-hoverBackground,#2a2d2e)]"
+												: "bg-transparent text-[var(--vscode-dropdown-foreground,#cccccc)]"
+									}`}
+									id={`${listboxId}-${option.id}`}
+									key={option.id}
+									onClick={async (event) => {
+										event.preventDefault()
+										await handleToggleOption(index)
 									}}
+									onMouseEnter={() => setActiveIndex(index)}
+									onMouseLeave={() => setActiveIndex((prev) => (prev === index ? -1 : prev))}
+									ref={(el) => {
+										optionRefs.current[index] = el
+									}}
+									role="option"
 									tabIndex={-1}
-									type="checkbox"
-								/>
-								<span
-									style={{
-										flex: 1,
-										fontSize: 12,
-										fontFamily: "inherit",
-									}}>
-									{option.name}
-								</span>
-							</div>
-						)
-					})}
+									type="button">
+									<span
+										className={`flex h-3 w-3 items-center justify-center rounded-[3px] border text-[10px] font-semibold ${
+											checked
+												? "border-[var(--vscode-checkbox-border,#0078d4)] bg-[var(--vscode-checkbox-background,#0078d4)] text-black"
+												: "border-[var(--vscode-checkbox-border,#3c3c3c)] text-transparent"
+										}`}>
+										✓
+									</span>
+									<span className="flex-1 truncate" title={option.name}>
+										{option.name}
+									</span>
+								</button>
+							)
+						})
+					)}
 				</div>
 			)}
 		</div>
 	)
 }
+
+export default OcaVectorPicker
