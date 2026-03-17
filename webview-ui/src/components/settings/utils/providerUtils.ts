@@ -172,6 +172,7 @@ export interface NormalizedApiConfig {
 	selectedProvider: ApiProvider
 	selectedModelId: string
 	selectedModelInfo: ModelInfo
+	selectedVectorIds?: string[]
 }
 
 /**
@@ -474,10 +475,13 @@ export function normalizeApiConfiguration(
 			const ocaModelId = currentMode === "plan" ? apiConfiguration?.planModeOcaModelId : apiConfiguration?.actModeOcaModelId
 			const ocaModelInfo =
 				currentMode === "plan" ? apiConfiguration?.planModeOcaModelInfo : apiConfiguration?.actModeOcaModelInfo
+			const ocaVectorIds =
+				currentMode === "plan" ? apiConfiguration?.planModeOcaVectorIds : apiConfiguration?.actModeOcaVectorIds
 			return {
 				selectedProvider: provider,
 				selectedModelId: ocaModelId || "",
 				selectedModelInfo: ocaModelInfo || liteLlmModelInfoSaneDefaults,
+				selectedVectorIds: ocaVectorIds || [],
 			}
 		case "aihubmix":
 			const aihubmixModelId =
@@ -563,6 +567,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 			// Other mode-specific fields
 			thinkingBudgetTokens: undefined,
 			reasoningEffort: undefined,
+			ocaVectorIds: undefined,
 		}
 	}
 
@@ -650,6 +655,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 		reasoningEffort: mode === "plan" ? apiConfiguration.planModeReasoningEffort : apiConfiguration.actModeReasoningEffort,
 		// Oracle Code Assist
 		ocaModelInfo: mode === "plan" ? apiConfiguration.planModeOcaModelInfo : apiConfiguration.actModeOcaModelInfo,
+		ocaVectorIds: mode === "plan" ? apiConfiguration.planModeOcaVectorIds : apiConfiguration.actModeOcaVectorIds,
 	}
 }
 
@@ -806,6 +812,8 @@ export async function syncModeConfigurations(
 			updates.actModeOcaModelId = sourceFields.ocaModelId
 			updates.planModeOcaModelInfo = sourceFields.ocaModelInfo
 			updates.actModeOcaModelInfo = sourceFields.ocaModelInfo
+			updates.planModeOcaVectorIds = sourceFields.ocaVectorIds
+			updates.actModeOcaVectorIds = sourceFields.ocaVectorIds
 			break
 		case "nousResearch":
 			updates.planModeNousResearchModelId = sourceFields.nousResearchModelId

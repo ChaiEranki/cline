@@ -122,6 +122,8 @@ export async function updateApiConfigurationProto(
 			geminiActModeThinkingLevel: protoApiConfiguration.geminiActModeThinkingLevel,
 			planModeReasoningEffort: protoApiConfiguration.planModeReasoningEffort as OpenaiReasoningEffort | undefined,
 			actModeReasoningEffort: protoApiConfiguration.actModeReasoningEffort as OpenaiReasoningEffort | undefined,
+			planModeOcaVectorIds: protoApiConfiguration.planModeOcaVectorIds,
+			actModeOcaVectorIds: protoApiConfiguration.actModeOcaVectorIds,
 		}
 
 		// Update the API configuration in storage
