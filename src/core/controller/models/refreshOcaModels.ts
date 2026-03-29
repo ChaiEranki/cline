@@ -7,6 +7,7 @@ import {
 	CHAT_COMPLETIONS_API,
 	DEFAULT_EXTERNAL_OCA_BASE_URL,
 	DEFAULT_INTERNAL_OCA_BASE_URL,
+	MESSAGES_API,
 	RESPONSES_API,
 } from "@/services/auth/oca/utils/constants"
 import { createOcaHeaders } from "@/services/auth/oca/utils/utils"
@@ -15,6 +16,29 @@ import { ShowMessageType } from "@/shared/proto/index.host"
 import { Logger } from "@/shared/services/Logger"
 import { GlobalStateAndSettings } from "@/shared/storage/state-keys"
 import { Controller } from ".."
+
+const getAnthropicModel = (modelId: string): OcaModelInfo => {
+	return OcaModelInfo.create({
+		maxTokens: -1,
+		contextWindow: 1_000_000,
+		supportsImages: true,
+		supportsPromptCache: false,
+		inputPrice: 0,
+		outputPrice: 0,
+		cacheWritesPrice: 0,
+		cacheReadsPrice: 0,
+		description: "anthropic model",
+		thinkingConfig: undefined,
+		surveyContent: undefined,
+		surveyId: undefined,
+		temperature: 0,
+		banner: undefined,
+		modelName: modelId,
+		apiFormat: ApiFormat.ANTHROPIC_CHAT,
+		supportsReasoning: false,
+		reasoningEffortOptions: [],
+	})
+}
 
 /**
  * Refreshes the Oca models and returns the updated model list
@@ -63,9 +87,12 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 				}
 				const modelInfo = model.model_info
 				const supportedApiList = modelInfo.supported_api_list ?? [CHAT_COMPLETIONS_API]
-				const apiFormat: ApiFormat = supportedApiList.includes(RESPONSES_API)
-					? ApiFormat.OPENAI_RESPONSES
-					: ApiFormat.OPENAI_CHAT
+				let apiFormat: ApiFormat = ApiFormat.OPENAI_CHAT
+				if (supportedApiList.includes(RESPONSES_API) && !supportedApiList.includes(CHAT_COMPLETIONS_API)) {
+					apiFormat = ApiFormat.OPENAI_RESPONSES
+				} else if (supportedApiList.includes(MESSAGES_API) && !supportedApiList.includes(CHAT_COMPLETIONS_API)) {
+					apiFormat = ApiFormat.ANTHROPIC_CHAT
+				}
 				models[modelId] = OcaModelInfo.create({
 					maxTokens: model.litellm_params?.max_tokens || -1,
 					contextWindow: modelInfo.context_window,
@@ -87,6 +114,12 @@ export async function refreshOcaModels(controller: Controller, request: StringRe
 					reasoningEffortOptions: modelInfo.reasoning_effort_options || [],
 				})
 			}
+			const anthropic1 = "oca/claude-sonnet-4.5"
+			const anthropic2 = "oca/claude-opus-4-6"
+			const anthropic3 = "oca/claude-haiku-4-5"
+			models[anthropic1] = getAnthropicModel(anthropic1)
+			models[anthropic2] = getAnthropicModel(anthropic2)
+			models[anthropic3] = getAnthropicModel(anthropic3)
 			Logger.log("OCA models fetched", models)
 
 			// Fetch current config to determine existing model selections

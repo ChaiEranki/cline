@@ -177,7 +177,7 @@ export class OpenAiNativeHandler implements ApiHandler {
 			requestedEffort === "none"
 				? undefined
 				: {
-						effort: requestedEffort,
+						effort: requestedEffort as any,
 						summary: "auto",
 					}
 
