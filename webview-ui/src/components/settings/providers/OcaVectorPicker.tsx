@@ -77,6 +77,9 @@ export const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 			<label className="font-medium text-[12px] mb-[4px] block" htmlFor="oca-vector-picker-trigger">
 				Knowledge Base
 			</label>
+			{disabled && disabledMessage ? (
+				<div className="text-[11px] text-[var(--vscode-errorForeground)] mt-1 mb-2">{disabledMessage}</div>
+			) : null}
 			<div className="flex items-center gap-2 mb-1">
 				<MultiSelectDropdown
 					buttonId="oca-vector-picker-trigger"
@@ -105,9 +108,7 @@ export const OcaVectorPicker: React.FC<OcaVectorPickerProps> = ({
 					{loading ? "Refreshing…" : "Refresh"}
 				</VSCodeButton>
 			</div>
-			{disabled && disabledMessage ? (
-				<div className="text-[11px] text-[var(--vscode-descriptionForeground)] mt-1 mb-2">{disabledMessage}</div>
-			) : lastRefreshedText ? (
+			{lastRefreshedText ? (
 				<div className="text-[11px] text-[var(--vscode-descriptionForeground)] mt-0 mb-2">
 					Last refreshed at {lastRefreshedText}
 				</div>

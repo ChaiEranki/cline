@@ -14,7 +14,7 @@ import { useApiConfigurationHandlers } from "../utils/useApiConfigurationHandler
 import OcaModelPicker from "./OcaModelPicker"
 import OcaVectorPicker from "./OcaVectorPicker"
 
-const KB_UNSUPPORTED_API_FORMATS = [ApiFormat.OPENAI_RESPONSES, ApiFormat.ANTHROPIC_CHAT]
+const KB_UNSUPPORTED_API_FORMATS = [ApiFormat.ANTHROPIC_CHAT]
 
 /**
  * Props for the OcaProvider component
