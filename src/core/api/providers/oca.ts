@@ -34,6 +34,7 @@ export interface OcaHandlerOptions extends CommonApiHandlerOptions {
 	ocaUsePromptCache?: boolean
 	taskId?: string
 	ocaMode?: string // "internal" or "external"
+	vectorIds?: string[]
 }
 
 export class OcaHandler implements ApiHandler {
@@ -294,6 +295,14 @@ export class OcaHandler implements ApiHandler {
 
 		const toolCallProcessor = new ToolCallProcessor()
 
+		const toolsWithVectorStore: OpenAITool[] = tools ?? []
+		if (this.getVectorStores().length > 0) {
+			toolsWithVectorStore.push({
+				type: "file_search",
+				vector_store_ids: this.getVectorStores(),
+			} as any)
+		}
+
 		const chatCompletionsParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 			model: this.options.ocaModelId || liteLlmDefaultModelId,
 			messages: [enhancedSystemMessage, ...enhancedMessages],
@@ -305,7 +314,7 @@ export class OcaHandler implements ApiHandler {
 			...(thinkingConfig && { thinking: thinkingConfig }), // Add thinking configuration when applicable
 			...(this.options.taskId && {
 				litellm_session_id: `cline-${this.options.taskId}`,
-				...getOpenAIToolParams(tools),
+				...getOpenAIToolParams(toolsWithVectorStore),
 			}), // Add session ID for LiteLLM tracking
 		}
 
@@ -394,11 +403,19 @@ export class OcaHandler implements ApiHandler {
 				strict: tool.function.strict ?? true, // Responses API defaults to strict mode
 			}))
 
+		const toolsWithVectorStore = responseTools ?? []
+		if (this.getVectorStores().length > 0) {
+			toolsWithVectorStore.push({
+				type: "file_search",
+				vector_store_ids: this.getVectorStores(),
+			} as any)
+		}
+
 		const responsesParams: OpenAI.Responses.ResponseCreateParamsStreaming = {
 			model: this.options.ocaModelId || liteLlmDefaultModelId,
 			input,
 			stream: true,
-			tools: responseTools,
+			tools: toolsWithVectorStore,
 		}
 
 		const ocaModelInfo = this.options.ocaModelInfo
@@ -451,6 +468,13 @@ export class OcaHandler implements ApiHandler {
 		})
 
 		yield* handleAnthropicMessagesApiStreamResponse(stream)
+	}
+
+	getVectorStores() {
+		if (this.options.vectorIds) {
+			return this.options.vectorIds
+		}
+		return []
 	}
 
 	getModel() {

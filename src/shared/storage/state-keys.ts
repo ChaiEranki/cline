@@ -139,6 +139,7 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	ocaMode: { default: "internal" as string },
 	aihubmixBaseUrl: { default: undefined as string | undefined },
 	aihubmixAppCode: { default: undefined as string | undefined },
+	enableParallelToolCalling: { default: true as boolean },
 
 	// Plan mode configurations
 	planModeApiModelId: { default: undefined as string | undefined },
@@ -175,6 +176,7 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	planModeHuaweiCloudMaasModelInfo: { default: undefined as ModelInfo | undefined },
 	planModeOcaModelId: { default: undefined as string | undefined },
 	planModeOcaModelInfo: { default: undefined as OcaModelInfo | undefined },
+	planModeOcaVectorIds: { default: [] as string[] },
 	planModeOcaReasoningEffort: { default: undefined as string | undefined },
 	planModeAihubmixModelId: { default: undefined as string | undefined },
 	planModeAihubmixModelInfo: { default: undefined as OpenAiCompatibleModelInfo | undefined },
@@ -219,6 +221,7 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	actModeHuaweiCloudMaasModelInfo: { default: undefined as ModelInfo | undefined },
 	actModeOcaModelId: { default: undefined as string | undefined },
 	actModeOcaModelInfo: { default: undefined as OcaModelInfo | undefined },
+	actModeOcaVectorIds: { default: [] as string[] },
 	actModeOcaReasoningEffort: { default: undefined as string | undefined },
 	actModeAihubmixModelId: { default: undefined as string | undefined },
 	actModeAihubmixModelInfo: { default: undefined as OpenAiCompatibleModelInfo | undefined },
@@ -257,6 +260,7 @@ const USER_SETTINGS_FIELDS = {
 	terminalOutputLineLimit: { default: 500 as number },
 	maxConsecutiveMistakes: { default: 3 as number },
 	strictPlanModeEnabled: { default: false as boolean },
+	hooksEnabled: { default: true as boolean },
 	yoloModeToggled: { default: false as boolean },
 	autoApproveAllToggled: { default: false as boolean },
 	useAutoCondense: { default: false as boolean },
@@ -267,7 +271,6 @@ const USER_SETTINGS_FIELDS = {
 	mode: { default: "act" as Mode },
 	focusChainSettings: { default: DEFAULT_FOCUS_CHAIN_SETTINGS as FocusChainSettings },
 	customPrompt: { default: undefined as "compact" | undefined },
-	enableParallelToolCalling: { default: true as boolean },
 	backgroundEditEnabled: { default: false as boolean },
 	optOutOfRemoteConfig: { default: false as boolean },
 	doubleCheckCompletionEnabled: { default: false as boolean },
@@ -344,6 +347,7 @@ const SECRETS_KEYS = [
 	"ocaRefreshToken",
 	"mcpOAuthSecrets",
 	"openai-codex-oauth-credentials", // JSON blob containing OAuth tokens for OpenAI Codex (ChatGPT subscription)
+	"wandbApiKey",
 ] as const
 
 // WARNING, these are not ALL of the local state keys in practice. For example, FileContextTracker

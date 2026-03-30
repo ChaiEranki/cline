@@ -683,6 +683,20 @@ export class Task {
 			await this.postStateToWebview()
 		}
 
+		if (type !== "command_output") {
+			// command_output is a special ask used by the webview command stream UI.
+			// It powers "Proceed While Running" and incremental output updates, so it is
+			// not a strict approval boundary that should force external "user_attention"
+			// handling. In auto-approve flows, command_output asks can still be emitted,
+			// so we intentionally skip Notification hook emission for this ask type.
+			await this.runNotificationHook({
+				event: "user_attention",
+				source: type,
+				message: text || "",
+				waitingForUserInput: true,
+			})
+		}
+
 		await pWaitFor(() => this.taskState.askResponse !== undefined || this.taskState.lastMessageTs !== askTs, {
 			interval: 100,
 		})
@@ -700,6 +714,35 @@ export class Task {
 		this.taskState.askResponseImages = undefined
 		this.taskState.askResponseFiles = undefined
 		return result
+	}
+
+	private async runNotificationHook(notification: {
+		event: string
+		source: string
+		message: string
+		waitingForUserInput: boolean
+	}): Promise<void> {
+		const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
+		if (!hooksEnabled) {
+			return
+		}
+
+		try {
+			await executeHook({
+				hookName: "Notification",
+				hookInput: {
+					notification,
+				},
+				isCancellable: false,
+				say: async () => undefined,
+				messageStateHandler: this.messageStateHandler,
+				taskId: this.taskId,
+				hooksEnabled,
+				model: getHookModelContext(this.api, this.stateManager),
+			})
+		} catch (error) {
+			Logger.error("[Notification Hook] Failed (non-fatal):", error)
+		}
 	}
 
 	async handleWebviewAskResponse(askResponse: ClineAskResponse, text?: string, images?: string[], files?: string[]) {
@@ -893,7 +936,7 @@ export class Task {
 		userContent: ClineContent[],
 		_context: "initial_task" | "resume" | "feedback",
 	): Promise<{ cancel?: boolean; wasCancelled?: boolean; contextModification?: string; errorMessage?: string }> {
-		const hooksEnabled = getHooksEnabledSafe()
+		const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
 
 		if (!hooksEnabled) {
 			return {}
@@ -980,7 +1023,7 @@ export class Task {
 		}
 
 		// Add TaskStart hook context to the conversation if provided
-		const hooksEnabled = getHooksEnabledSafe()
+		const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
 		if (hooksEnabled) {
 			const taskStartResult = await executeHook({
 				hookName: "TaskStart",
@@ -1129,7 +1172,7 @@ export class Task {
 		const newUserContent: ClineContent[] = []
 
 		// Run TaskResume hook AFTER user clicks resume button
-		const hooksEnabled = getHooksEnabledSafe()
+		const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
 		if (hooksEnabled) {
 			const clineMessages = this.messageStateHandler.getClineMessages()
 			const taskResumeResult = await executeHook({
@@ -1454,7 +1497,7 @@ export class Task {
 			// PHASE 4: Run TaskCancel hook
 			// This allows the hook UI to appear in the webview
 			// Use the shouldRunTaskCancelHook value we captured in Phase 1
-			const hooksEnabled = getHooksEnabledSafe()
+			const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
 			if (hooksEnabled && shouldRunTaskCancelHook) {
 				try {
 					await executeHook({
@@ -1687,7 +1730,7 @@ export class Task {
 		const apiConversationHistory = this.messageStateHandler.getApiConversationHistory()
 
 		// Run PreCompact hook before truncation
-		const hooksEnabled = getHooksEnabledSafe()
+		const hooksEnabled = getHooksEnabledSafe(this.stateManager.getGlobalSettingsKey("hooksEnabled"))
 		if (hooksEnabled) {
 			try {
 				// Calculate what the new deleted range will be
@@ -1715,7 +1758,7 @@ export class Task {
 					postStateToWebview: this.postStateToWebview.bind(this),
 					taskState: this.taskState,
 					cancelTask: this.cancelTask.bind(this),
-					hooksEnabled: true,
+					hooksEnabled,
 				})
 			} catch (error) {
 				// If hook was cancelled, re-throw to stop compaction
@@ -2549,7 +2592,11 @@ export class Task {
 				})
 			}
 
-			const queueUsageChunkSideEffects = (usageInputTokens: number, usageOutputTokens: number) => {
+			const queueUsageChunkSideEffects = (
+				usageInputTokens: number,
+				usageOutputTokens: number,
+				chunkOptions?: { cacheWriteTokens?: number; cacheReadTokens?: number; totalCost?: number },
+			) => {
 				usageChunkSideEffectsQueue = usageChunkSideEffectsQueue
 					// This executes immediately after enqueue (microtask if already resolved), not at stream end.
 					.then(async () => {
@@ -2559,7 +2606,14 @@ export class Task {
 
 						await updateApiReqMsgFromMetrics()
 						await this.postStateToWebview()
-						await telemetryService.captureTokenUsage(this.ulid, usageInputTokens, usageOutputTokens, model.id)
+						await telemetryService.captureTokenUsage(
+							this.ulid,
+							usageInputTokens,
+							usageOutputTokens,
+							providerId,
+							model.id,
+							chunkOptions,
+						)
 					})
 					.catch((error) => {
 						Logger.debug(`[Task ${this.taskId}] Failed to process usage chunk side effects: ${error}`)
@@ -2695,7 +2749,11 @@ export class Task {
 						taskMetrics.cacheWriteTokens += chunk.cacheWriteTokens ?? 0
 						taskMetrics.cacheReadTokens += chunk.cacheReadTokens ?? 0
 						taskMetrics.totalCost = chunk.totalCost ?? taskMetrics.totalCost
-						queueUsageChunkSideEffects(chunk.inputTokens, chunk.outputTokens)
+						queueUsageChunkSideEffects(chunk.inputTokens, chunk.outputTokens, {
+							cacheWriteTokens: chunk.cacheWriteTokens,
+							cacheReadTokens: chunk.cacheReadTokens,
+							totalCost: chunk.totalCost,
+						})
 					},
 				})
 
@@ -2909,7 +2967,11 @@ export class Task {
 					taskMetrics.cacheWriteTokens += apiStreamUsage.cacheWriteTokens ?? 0
 					taskMetrics.cacheReadTokens += apiStreamUsage.cacheReadTokens ?? 0
 					taskMetrics.totalCost = apiStreamUsage.totalCost ?? taskMetrics.totalCost
-					queueUsageChunkSideEffects(apiStreamUsage.inputTokens, apiStreamUsage.outputTokens)
+					queueUsageChunkSideEffects(apiStreamUsage.inputTokens, apiStreamUsage.outputTokens, {
+						cacheWriteTokens: apiStreamUsage.cacheWriteTokens,
+						cacheReadTokens: apiStreamUsage.cacheReadTokens,
+						totalCost: apiStreamUsage.totalCost,
+					})
 				}
 			}
 
@@ -2924,7 +2986,11 @@ export class Task {
 			}
 
 			// Stored the assistant API response immediately after the stream finishes in the same turn
-			const assistantHasContent = assistantMessage.length > 0 || this.useNativeToolCalls
+			// Check if the stream produced any content — either text or native tool calls.
+			// toolUseHandler may have accumulated tool_use blocks even when useNativeToolCalls is false
+			// (e.g., from Claude Code provider when the model returns native tool_use blocks).
+			const hasAccumulatedToolCalls = toolUseHandler.getAllFinalizedToolUses().length > 0
+			const assistantHasContent = assistantMessage.length > 0 || this.useNativeToolCalls || hasAccumulatedToolCalls
 			if (assistantHasContent) {
 				telemetryService.captureConversationTurnEvent(
 					this.ulid,

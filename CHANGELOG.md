@@ -1,5 +1,50 @@
 # Changelog
 
+## [3.73.0]
+
+### Added
+
+- Added W&B Inference by CoreWeave as a new API provider with 17 models
+- Improved parallel tool calling support for OpenRouter and Cline providers
+
+### Fixed
+
+- Claude Code Provider: handle rate limit events, empty content arrays, error results, and unknown content types without crashing
+- Tool handlers (`read_file`, `list_files`, `list_code_definition_names`, `search_files`) now return graceful errors instead of crashing
+
+## [3.72.0]
+
+### Added
+
+- Added Anthropic Opus 4.6 fast mode variants
+
+### Fixed
+
+- Resolved native tool placeholder interpolation in prompts
+- Gemini: capped Flash output tokens to 8192 across providers
+- Fixed Windows unit test path normalization
+- Fixed flaky hooks tests on Windows
+- Bedrock: handle thinking and redacted_thinking blocks correctly in message conversion and streaming
+- Prevent crash when `list_files` or `list_code_definition_names` receives a file path
+
+### Changed
+
+- Updated Jupyter Notebook GIFs
+- Markdown image loading now requires user consent
+- Added `.github/copilot-instructions.md` for coding agents
+- Hooks: reintroduced feature toggle
+
+## [3.71.0]
+
+### Added
+
+- Added GPT-5.4 models for ChatGPT subscription users
+- Hooks: Added a `Notification` hook for attention and completion boundaries
+
+### Fixed
+
+- Handle streamable HTTP MCP reconnects more reliably after disconnects
+
 ## [3.70.0]
 
 ### Added

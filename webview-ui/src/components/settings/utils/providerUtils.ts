@@ -65,6 +65,8 @@ import {
 	sapAiCoreModels,
 	vertexDefaultModelId,
 	vertexModels,
+	wandbDefaultModelId,
+	wandbModels,
 	xaiDefaultModelId,
 	xaiModels,
 } from "@shared/api"
@@ -118,6 +120,8 @@ export function getModelsForProvider(
 			return moonshotModels
 		case "nebius":
 			return nebiusModels
+		case "wandb":
+			return wandbModels
 		case "sambanova":
 			return sambanovaModels
 		case "cerebras":
@@ -168,6 +172,7 @@ export interface NormalizedApiConfig {
 	selectedProvider: ApiProvider
 	selectedModelId: string
 	selectedModelInfo: ModelInfo
+	selectedVectorIds?: string[]
 }
 
 /**
@@ -373,6 +378,8 @@ export function normalizeApiConfiguration(
 			}
 		case "nebius":
 			return getProviderData(nebiusModels, nebiusDefaultModelId)
+		case "wandb":
+			return getProviderData(wandbModels, wandbDefaultModelId)
 		case "sambanova":
 			return getProviderData(sambanovaModels, sambanovaDefaultModelId)
 		case "cerebras":
@@ -468,10 +475,13 @@ export function normalizeApiConfiguration(
 			const ocaModelId = currentMode === "plan" ? apiConfiguration?.planModeOcaModelId : apiConfiguration?.actModeOcaModelId
 			const ocaModelInfo =
 				currentMode === "plan" ? apiConfiguration?.planModeOcaModelInfo : apiConfiguration?.actModeOcaModelInfo
+			const ocaVectorIds =
+				currentMode === "plan" ? apiConfiguration?.planModeOcaVectorIds : apiConfiguration?.actModeOcaVectorIds
 			return {
 				selectedProvider: provider,
 				selectedModelId: ocaModelId || "",
 				selectedModelInfo: ocaModelInfo || liteLlmModelInfoSaneDefaults,
+				selectedVectorIds: ocaVectorIds || [],
 			}
 		case "aihubmix":
 			const aihubmixModelId =
@@ -557,6 +567,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 			// Other mode-specific fields
 			thinkingBudgetTokens: undefined,
 			reasoningEffort: undefined,
+			ocaVectorIds: undefined,
 		}
 	}
 
@@ -644,6 +655,7 @@ export function getModeSpecificFields(apiConfiguration: ApiConfiguration | undef
 		reasoningEffort: mode === "plan" ? apiConfiguration.planModeReasoningEffort : apiConfiguration.actModeReasoningEffort,
 		// Oracle Code Assist
 		ocaModelInfo: mode === "plan" ? apiConfiguration.planModeOcaModelInfo : apiConfiguration.actModeOcaModelInfo,
+		ocaVectorIds: mode === "plan" ? apiConfiguration.planModeOcaVectorIds : apiConfiguration.actModeOcaVectorIds,
 	}
 }
 
@@ -800,6 +812,8 @@ export async function syncModeConfigurations(
 			updates.actModeOcaModelId = sourceFields.ocaModelId
 			updates.planModeOcaModelInfo = sourceFields.ocaModelInfo
 			updates.actModeOcaModelInfo = sourceFields.ocaModelInfo
+			updates.planModeOcaVectorIds = sourceFields.ocaVectorIds
+			updates.actModeOcaVectorIds = sourceFields.ocaVectorIds
 			break
 		case "nousResearch":
 			updates.planModeNousResearchModelId = sourceFields.nousResearchModelId
@@ -827,6 +841,7 @@ export async function syncModeConfigurations(
 		case "asksage":
 		case "xai":
 		case "nebius":
+		case "wandb":
 		case "sambanova":
 		case "cerebras":
 		case "sapaicore":

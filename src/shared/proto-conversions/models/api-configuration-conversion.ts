@@ -288,6 +288,8 @@ function convertApiProviderToProto(provider: string | undefined): ProtoApiProvid
 			return ProtoApiProvider.HUGGINGFACE
 		case "nebius":
 			return ProtoApiProvider.NEBIUS
+		case "wandb":
+			return ProtoApiProvider.WANDB
 		case "fireworks":
 			return ProtoApiProvider.FIREWORKS
 		case "asksage":
@@ -378,6 +380,8 @@ export function convertProtoToApiProvider(provider: ProtoApiProvider): ApiProvid
 			return "huggingface"
 		case ProtoApiProvider.NEBIUS:
 			return "nebius"
+		case ProtoApiProvider.WANDB:
+			return "wandb"
 		case ProtoApiProvider.FIREWORKS:
 			return "fireworks"
 		case ProtoApiProvider.ASKSAGE:
@@ -478,6 +482,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		moonshotApiKey: config.moonshotApiKey,
 		huggingFaceApiKey: config.huggingFaceApiKey,
 		nebiusApiKey: config.nebiusApiKey,
+		wandbApiKey: config.wandbApiKey,
 		asksageApiUrl: config.asksageApiUrl,
 		asksageApiKey: config.asksageApiKey,
 		xaiApiKey: config.xaiApiKey,
@@ -545,6 +550,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		planModeSapAiCoreDeploymentId: config.planModeSapAiCoreDeploymentId,
 		planModeOcaModelId: config.planModeOcaModelId,
 		planModeOcaModelInfo: convertOcaModelInfoToProtoOcaModelInfo(config.planModeOcaModelInfo),
+		planModeOcaVectorIds: config.planModeOcaVectorIds || [],
 		planModeOcaReasoningEffort: config.planModeOcaReasoningEffort,
 		planModeAihubmixModelId: config.planModeAihubmixModelId,
 		planModeAihubmixModelInfo: convertOpenAiCompatibleModelInfoToProto(config.planModeAihubmixModelInfo),
@@ -589,6 +595,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		actModeSapAiCoreDeploymentId: config.actModeSapAiCoreDeploymentId,
 		actModeOcaModelId: config.actModeOcaModelId,
 		actModeOcaModelInfo: convertOcaModelInfoToProtoOcaModelInfo(config.actModeOcaModelInfo),
+		actModeOcaVectorIds: config.actModeOcaVectorIds || [],
 		actModeOcaReasoningEffort: config.actModeOcaReasoningEffort,
 		actModeAihubmixModelId: config.actModeAihubmixModelId,
 		actModeAihubmixModelInfo: convertOpenAiCompatibleModelInfoToProto(config.actModeAihubmixModelInfo),
@@ -657,6 +664,7 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		moonshotApiKey: protoConfig.moonshotApiKey,
 		huggingFaceApiKey: protoConfig.huggingFaceApiKey,
 		nebiusApiKey: protoConfig.nebiusApiKey,
+		wandbApiKey: protoConfig.wandbApiKey,
 		asksageApiUrl: protoConfig.asksageApiUrl,
 		asksageApiKey: protoConfig.asksageApiKey,
 		xaiApiKey: protoConfig.xaiApiKey,
@@ -727,6 +735,7 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		planModeSapAiCoreDeploymentId: protoConfig.planModeSapAiCoreDeploymentId,
 		planModeOcaModelId: protoConfig.planModeOcaModelId,
 		planModeOcaModelInfo: convertProtoOcaModelInfoToOcaModelInfo(protoConfig.planModeOcaModelInfo),
+		planModeOcaVectorIds: protoConfig.planModeOcaVectorIds,
 		planModeOcaReasoningEffort: protoConfig.planModeOcaReasoningEffort,
 		planModeAihubmixModelId: protoConfig.planModeAihubmixModelId,
 		planModeAihubmixModelInfo: convertProtoToOpenAiCompatibleModelInfo(protoConfig.planModeAihubmixModelInfo),
@@ -772,6 +781,7 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		actModeSapAiCoreDeploymentId: protoConfig.actModeSapAiCoreDeploymentId,
 		actModeOcaModelId: protoConfig.actModeOcaModelId,
 		actModeOcaModelInfo: convertProtoOcaModelInfoToOcaModelInfo(protoConfig.actModeOcaModelInfo),
+		actModeOcaVectorIds: protoConfig.actModeOcaVectorIds,
 		actModeOcaReasoningEffort: protoConfig.actModeOcaReasoningEffort,
 		actModeAihubmixModelId: protoConfig.actModeAihubmixModelId,
 		actModeAihubmixModelInfo: convertProtoToOpenAiCompatibleModelInfo(protoConfig.actModeAihubmixModelInfo),
